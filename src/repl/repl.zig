@@ -36,14 +36,10 @@ pub const Repl = struct {
     }
 
     pub fn run(self: *Repl, initial_path: ?[]const u8) !void {
-        out.printRaw(
-            \\
-            \\  \x1b[1;38;2;0;229;255m╔══════════════════════════════════════════════════════════════════════════╗\x1b[0m
-            \\  \x1b[1;38;2;0;229;255m║  \x1b[1;38;2;255;110;64mZSPACE REPL\x1b[1;38;2;0;229;255m — Interactive High-Throughput Disk Shell                  ║\x1b[0m
-            \\  \x1b[1;38;2;0;229;255m╚══════════════════════════════════════════════════════════════════════════╝\x1b[0m
-            \\  Type '\x1b[1;36mhelp\x1b[0m' for command reference, '\x1b[1;36mexit\x1b[0m' to quit.
-            \\
-        );
+        out.printRaw("\n  \x1b[1;38;2;0;229;255m╔══════════════════════════════════════════════════════════════════════════╗\x1b[0m\n");
+        out.printRaw("  \x1b[1;38;2;0;229;255m║  \x1b[1;38;2;255;110;64mZSPACE REPL\x1b[1;38;2;0;229;255m — Interactive High-Throughput Disk Shell                  ║\x1b[0m\n");
+        out.printRaw("  \x1b[1;38;2;0;229;255m╚══════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
+        out.printRaw("  Type '\x1b[1;36mhelp\x1b[0m' for command reference, '\x1b[1;36mexit\x1b[0m' to quit.\n\n");
 
         if (initial_path) |p| {
             try self.executeScan(p);

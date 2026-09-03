@@ -17,7 +17,14 @@ const c = @cImport({
 });
 
 pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len < 2) {
+    if (args.len < 2 or (args.len == 2 and std.mem.startsWith(u8, args[1], "-psn"))) {
+        const is_terminal = c.isatty(0) == 1;
+        if (!is_terminal) {
+            const home_c = c.getenv("HOME");
+            const launch_dir = if (home_c != null) std.mem.span(@as([*:0]const u8, @ptrCast(home_c))) else ".";
+            try runGuiCmd(allocator, launch_dir);
+            return;
+        }
         printHelp();
         return;
     }

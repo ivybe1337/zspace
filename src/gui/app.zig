@@ -40,6 +40,8 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
     const NSApplication = objc_getClass("NSApplication");
     const sel_sharedApp = sel_registerName("sharedApplication");
     const sel_setActivationPolicy = sel_registerName("setActivationPolicy:");
+    const sel_activateIgnoringOtherApps = sel_registerName("activateIgnoringOtherApps:");
+    const sel_run = sel_registerName("run");
 
     const app = objc_msgSend(NSApplication, sel_sharedApp);
     if (app == null) {
@@ -47,7 +49,7 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
         return;
     }
 
-    _ = objc_msgSend(app, sel_setActivationPolicy, @as(isize, 0));
+    _ = objc_msgSend(app, sel_setActivationPolicy, @as(isize, 0)); // NSApplicationActivationPolicyRegular
 
     const NSWindow = objc_getClass("NSWindow");
     const sel_alloc = sel_registerName("alloc");
@@ -55,9 +57,17 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
     const sel_setTitle = sel_registerName("setTitle:");
     const sel_makeKeyAndOrderFront = sel_registerName("makeKeyAndOrderFront:");
     const sel_center = sel_registerName("center");
+    const sel_setBackgroundColor = sel_registerName("setBackgroundColor:");
+    const sel_setAppearance = sel_registerName("setAppearance:");
 
     const NSString = objc_getClass("NSString");
     const sel_stringWithUTF8String = sel_registerName("stringWithUTF8String:");
+
+    const NSColor = objc_getClass("NSColor");
+    const sel_colorWithRed = sel_registerName("colorWithRed:green:blue:alpha:");
+
+    const NSAppearance = objc_getClass("NSAppearance");
+    const sel_appearanceNamed = sel_registerName("appearanceNamed:");
 
     const window_alloc = objc_msgSend(NSWindow, sel_alloc);
     const window = objc_msgSend(
@@ -65,21 +75,53 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
         sel_initWithContentRect,
         @as(f64, 100.0),
         @as(f64, 100.0),
-        @as(f64, 1180.0),
-        @as(f64, 780.0),
+        @as(f64, 1200.0),
+        @as(f64, 800.0),
         @as(isize, 15), // Closable | Titled | Resizable | Miniaturizable
         @as(isize, 2),  // NSBackingStoreBuffered
         @as(u8, 0),
     );
 
     if (window != null) {
-        const title_c: [*:0]const u8 = "ZSpace — Spacetime Disk Intelligence";
-        const title_str = objc_msgSend(NSString, sel_stringWithUTF8String, title_c);
+        var title_buf: [256]u8 = undefined;
+        var sz_buf: [32]u8 = undefined;
+        const sz_str = types.DiskNode.formatSize(root_node.size_bytes, &sz_buf);
+        const title_slice = std.fmt.bufPrintZ(&title_buf, "ZSpace — {s} [{s}] ({d} items)", .{
+            root_node.name,
+            sz_str,
+            root_node.item_count,
+        }) catch "ZSpace — Spacetime Disk Intelligence";
+
+        const title_str = objc_msgSend(NSString, sel_stringWithUTF8String, title_slice.ptr);
         _ = objc_msgSend(window, sel_setTitle, title_str);
+
+        // Dark obsidian appearance (#101216)
+        const dark_aqua_key = objc_msgSend(NSString, sel_stringWithUTF8String, "NSAppearanceNameDarkAqua");
+        const dark_appearance = objc_msgSend(NSAppearance, sel_appearanceNamed, dark_aqua_key);
+        if (dark_appearance != null) {
+            _ = objc_msgSend(window, sel_setAppearance, dark_appearance);
+        }
+
+        const obsidian_bg = objc_msgSend(
+            NSColor,
+            sel_colorWithRed,
+            @as(f64, 0.062), // R: 16/255
+            @as(f64, 0.070), // G: 18/255
+            @as(f64, 0.086), // B: 22/255
+            @as(f64, 1.0),
+        );
+        if (obsidian_bg != null) {
+            _ = objc_msgSend(window, sel_setBackgroundColor, obsidian_bg);
+        }
+
         _ = objc_msgSend(window, sel_center);
         _ = objc_msgSend(window, sel_makeKeyAndOrderFront, @as(?*anyopaque, null));
     }
 
+    _ = objc_msgSend(app, sel_activateIgnoringOtherApps, @as(u8, 1));
     _ = state;
-    std.debug.print("✓ ZSpace Cocoa Window initialized successfully.\n", .{});
+    std.debug.print("✓ ZSpace Cocoa Window launched.\n", .{});
+
+    // Start native macOS event loop
+    _ = objc_msgSend(app, sel_run);
 }
