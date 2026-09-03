@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) void {
         root_mod.linkFramework("Metal", .{});
         root_mod.linkFramework("QuartzCore", .{});
         root_mod.linkFramework("CoreGraphics", .{});
+        root_mod.linkFramework("WebKit", .{});
     }
 
     b.installArtifact(exe);

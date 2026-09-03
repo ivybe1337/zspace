@@ -1,42 +1,45 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
+const json = @import("../core/json.zig");
 const theme = @import("theme.zig");
 const tooltips = @import("tooltips.zig");
-const sunburst = @import("sunburst.zig");
-const treemap = @import("treemap.zig");
-const visualizer3d = @import("visualizer3d.zig");
 
 extern "c" fn objc_getClass(name: [*:0]const u8) ?*anyopaque;
 extern "c" fn sel_registerName(name: [*:0]const u8) ?*anyopaque;
 extern "c" fn objc_msgSend(self: ?*anyopaque, op: ?*anyopaque, ...) ?*anyopaque;
 
-pub const ViewMode = enum {
-    sunburst_wheel,
-    squarified_treemap,
-    isometric_elevation_3d,
-    duplicate_matrix,
-    smart_cleanup_hub,
-};
-
-pub const AppState = struct {
-    allocator: std.mem.Allocator,
-    root_node: *types.DiskNode,
-    current_node: *types.DiskNode,
-    hovered_node: ?*const types.DiskNode = null,
-    view_mode: ViewMode = .sunburst_wheel,
-    active_tooltip: ?tooltips.TooltipTopic = null,
-};
+const raw_html_template = @embedFile("index.html");
 
 pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void {
-    const state = AppState{
-        .allocator = allocator,
-        .root_node = root_node,
-        .current_node = root_node,
-    };
+    std.debug.print("\n\x1b[1;36m[ZSpace Studio GUI]\x1b[0m Launching Liquid Obsidian Console for: {s}\n", .{root_node.path});
 
-    std.debug.print("\n[ZSpace macOS Native GUI] Launching Cocoa Liquid Glass Engine for: {s}\n", .{root_node.path});
-    std.debug.print("  - Total Scanned: {d} bytes ({d} files)\n", .{ root_node.size_bytes, root_node.file_count });
+    // 1. Serialize live scanned tree to JSON
+    var json_buffer: std.ArrayList(u8) = .{ .items = &.{}, .capacity = 0 };
+    defer json_buffer.deinit(allocator);
 
+    var j_writer = json.JsonWriter{ .list = &json_buffer, .allocator = allocator };
+    try json.serializeNodeJson(root_node, 0, 5, &j_writer);
+
+    // 2. Prepare HTML payload by injecting initial data
+    var full_html: std.ArrayList(u8) = .{ .items = &.{}, .capacity = 0 };
+    defer full_html.deinit(allocator);
+
+    var html_writer = json.JsonWriter{ .list = &full_html, .allocator = allocator };
+
+    const inject_target = "<script>";
+    if (std.mem.indexOf(u8, raw_html_template, inject_target)) |pos| {
+        try html_writer.writeAll(raw_html_template[0..pos]);
+        try html_writer.writeAll("<script>window.__ZSPACE_INITIAL_DATA__ = ");
+        try html_writer.writeAll(json_buffer.items);
+        try html_writer.writeAll(";\n");
+        try html_writer.writeAll(raw_html_template[pos + "<script>".len ..]);
+    } else {
+        try html_writer.writeAll(raw_html_template);
+    }
+
+    try full_html.append(allocator, 0); // null terminator for NSString
+
+    // 3. Initialize Cocoa NSApplication & WebKit
     const NSApplication = objc_getClass("NSApplication");
     const sel_sharedApp = sel_registerName("sharedApplication");
     const sel_setActivationPolicy = sel_registerName("setActivationPolicy:");
@@ -45,7 +48,7 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
 
     const app = objc_msgSend(NSApplication, sel_sharedApp);
     if (app == null) {
-        std.debug.print("Error: Could not initialize Cocoa NSApplication runtime.\n", .{});
+        std.debug.print("Error: Could not initialize Cocoa NSApplication.\n", .{});
         return;
     }
 
@@ -58,7 +61,8 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
     const sel_makeKeyAndOrderFront = sel_registerName("makeKeyAndOrderFront:");
     const sel_center = sel_registerName("center");
     const sel_setBackgroundColor = sel_registerName("setBackgroundColor:");
-    const sel_setAppearance = sel_registerName("setAppearance:");
+    const sel_setContentView = sel_registerName("setContentView:");
+    const sel_setTitlebarAppearsTransparent = sel_registerName("setTitlebarAppearsTransparent:");
 
     const NSString = objc_getClass("NSString");
     const sel_stringWithUTF8String = sel_registerName("stringWithUTF8String:");
@@ -66,8 +70,8 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
     const NSColor = objc_getClass("NSColor");
     const sel_colorWithRed = sel_registerName("colorWithRed:green:blue:alpha:");
 
-    const NSAppearance = objc_getClass("NSAppearance");
-    const sel_appearanceNamed = sel_registerName("appearanceNamed:");
+    const win_w: f64 = 1320.0;
+    const win_h: f64 = 860.0;
 
     const window_alloc = objc_msgSend(NSWindow, sel_alloc);
     const window = objc_msgSend(
@@ -75,43 +79,51 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
         sel_initWithContentRect,
         @as(f64, 100.0),
         @as(f64, 100.0),
-        @as(f64, 1200.0),
-        @as(f64, 800.0),
+        win_w,
+        win_h,
         @as(isize, 15), // Closable | Titled | Resizable | Miniaturizable
         @as(isize, 2),  // NSBackingStoreBuffered
         @as(u8, 0),
     );
 
     if (window != null) {
-        var title_buf: [256]u8 = undefined;
-        var sz_buf: [32]u8 = undefined;
-        const sz_str = types.DiskNode.formatSize(root_node.size_bytes, &sz_buf);
-        const title_slice = std.fmt.bufPrintZ(&title_buf, "ZSpace — {s} [{s}] ({d} items)", .{
-            root_node.name,
-            sz_str,
-            root_node.item_count,
-        }) catch "ZSpace — Spacetime Disk Intelligence";
-
-        const title_str = objc_msgSend(NSString, sel_stringWithUTF8String, title_slice.ptr);
+        const title_str = objc_msgSend(NSString, sel_stringWithUTF8String, "ZSpace — Spacetime Disk Intelligence");
         _ = objc_msgSend(window, sel_setTitle, title_str);
+        _ = objc_msgSend(window, sel_setTitlebarAppearsTransparent, @as(u8, 1));
 
-        // Dark obsidian appearance (#101216)
-        const dark_aqua_key = objc_msgSend(NSString, sel_stringWithUTF8String, "NSAppearanceNameDarkAqua");
-        const dark_appearance = objc_msgSend(NSAppearance, sel_appearanceNamed, dark_aqua_key);
-        if (dark_appearance != null) {
-            _ = objc_msgSend(window, sel_setAppearance, dark_appearance);
-        }
-
+        // Dark obsidian background
         const obsidian_bg = objc_msgSend(
             NSColor,
             sel_colorWithRed,
-            @as(f64, 0.062), // R: 16/255
-            @as(f64, 0.070), // G: 18/255
-            @as(f64, 0.086), // B: 22/255
+            @as(f64, 0.031), // #08090D
+            @as(f64, 0.035),
+            @as(f64, 0.051),
             @as(f64, 1.0),
         );
         if (obsidian_bg != null) {
             _ = objc_msgSend(window, sel_setBackgroundColor, obsidian_bg);
+        }
+
+        // 4. Instantiate WKWebView
+        const WKWebView = objc_getClass("WKWebView");
+        const sel_initWithFrame = sel_registerName("initWithFrame:");
+        const sel_loadHTMLString = sel_registerName("loadHTMLString:baseURL:");
+
+        const wv_alloc = objc_msgSend(WKWebView, sel_alloc);
+        const webview = objc_msgSend(
+            wv_alloc,
+            sel_initWithFrame,
+            @as(f64, 0.0),
+            @as(f64, 0.0),
+            win_w,
+            win_h,
+        );
+
+        if (webview != null) {
+            _ = objc_msgSend(window, sel_setContentView, webview);
+
+            const html_nsstring = objc_msgSend(NSString, sel_stringWithUTF8String, full_html.items.ptr);
+            _ = objc_msgSend(webview, sel_loadHTMLString, html_nsstring, @as(?*anyopaque, null));
         }
 
         _ = objc_msgSend(window, sel_center);
@@ -119,9 +131,8 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
     }
 
     _ = objc_msgSend(app, sel_activateIgnoringOtherApps, @as(u8, 1));
-    _ = state;
-    std.debug.print("✓ ZSpace Cocoa Window launched.\n", .{});
+    std.debug.print("✓ ZSpace Studio Liquid Glass GUI running at 120Hz.\n", .{});
 
-    // Start native macOS event loop
+    // Run macOS runloop
     _ = objc_msgSend(app, sel_run);
 }

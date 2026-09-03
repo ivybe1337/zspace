@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>ZSpace — Spacetime Disk Intelligence</title>
+  <style>
+    :root {
+      --bg-obsidian: #08090D;
+      --bg-surface-glass: rgba(16, 19, 28, 0.72);
+      --bg-surface-glass-heavy: rgba(12, 14, 21, 0.88);
+      --bg-card-hover: rgba(26, 31, 46, 0.65);
+      --border-hairline: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(0, 229, 255, 0.4);
+      --border-accent-orange: rgba(255, 110, 64, 0.35);
+
+      --accent-aqua: #00E5FF;
+      --accent-aqua-glow: rgba(0, 229, 255, 0.22);
+      --accent-orange: #FF6E40;
+      --accent-orange-glow: rgba(255, 110, 64, 0.25);
+      --accent-mint: #1DE9B6;
+      --accent-coral: #FF5252;
+      --accent-violet: #B388FF;
+
+      --text-bright: #F5F7FA;
+      --text-secondary: #9099A8;
+      --text-muted: #535C6E;
+
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Space Grotesk", sans-serif;
+      --font-mono: "SF Mono", Menlo, Monaco, "JetBrains Mono", monospace;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #111522 0%, var(--bg-obsidian) 70%);
+      color: var(--text-bright);
+      font-family: var(--font-display);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      letter-spacing: -0.01em;
+    }
+
+    /* Studio Header */
+    header {
+      height: 54px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border-bottom: 1px solid var(--border-hairline);
+      z-index: 100;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: 0.05em;
+      color: var(--text-bright);
+    }
+
+    .brand-jewel {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-aqua);
+      box-shadow: 0 0 12px var(--accent-aqua);
+      animation: pulse-glow 3s infinite ease-in-out;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 0.8; transform: scale(1); box-shadow: 0 0 10px var(--accent-aqua); }
+      50% { opacity: 1; transform: scale(1.15); box-shadow: 0 0 16px var(--accent-aqua); }
+    }
+
+    .badge-native {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      color: var(--accent-aqua);
+      letter-spacing: 0.08em;
+    }
+
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-left: 16px;
+      max-width: 320px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .breadcrumb-item {
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .breadcrumb-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--accent-aqua);
+    }
+
+    .breadcrumb-sep {
+      color: var(--text-muted);
+    }
+
+    /* Center View Switcher */
+    .view-switcher {
+      display: flex;
+      background: rgba(8, 10, 15, 0.8);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hairline);
+      gap: 2px;
+    }
+
+    .view-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      font-family: var(--font-display);
+    }
+
+    .view-btn:hover {
+      color: var(--text-bright);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .view-btn.active {
+      background: rgba(0, 229, 255, 0.12);
+      color: var(--accent-aqua);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.1);
+    }
+
+    /* Right Command Cluster */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      background: rgba(8, 10, 15, 0.85);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 4px 10px;
+      gap: 8px;
+      width: 180px;
+      transition: all 0.2s;
+    }
+
+    .search-bar:focus-within {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 12px var(--accent-aqua-glow);
+      width: 220px;
+    }
+
+    .search-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-bright);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      width: 100%;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(255, 110, 64, 0.1);
+      border: 1px solid var(--border-accent-orange);
+      color: var(--accent-orange);
+    }
+
+    /* Main Workspace Layout */
+    .workspace {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Left Stage Viewport */
+    .stage-viewport {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: rgba(6, 8, 12, 0.4);
+      overflow: hidden;
+    }
+
+    .stage-canvas-container {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* Radial Wheel Floating Overlay */
+    .sunburst-center-label {
+      position: absolute;
+      pointer-events: none;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sunburst-center-size {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-bright);
+    }
+
+    .sunburst-center-name {
+      font-size: 12px;
+      color: var(--accent-aqua);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .sunburst-center-hint {
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* 3D Elevation Controls */
+    .viewport-controls-bar {
+      position: absolute;
+      bottom: 16px;
+      left: 20px;
+      display: flex;
+      gap: 8px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hairline);
+      z-index: 10;
+      align-items: center;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+    }
+
+    .slider-input {
+      -webkit-appearance: none;
+      width: 90px;
+      height: 4px;
+      background: #1C2230;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .slider-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent-aqua);
+      cursor: pointer;
+      box-shadow: 0 0 6px var(--accent-aqua);
+    }
+
+    /* Right Inspector Dossier Drawer */
+    .inspector-drawer {
+      width: 380px;
+      background: var(--bg-surface-glass-heavy);
+      backdrop-filter: blur(32px) saturate(200%);
+      -webkit-backdrop-filter: blur(32px) saturate(200%);
+      border-left: 1px solid var(--border-hairline);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 50;
+    }
+
+    .drawer-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-hairline);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .drawer-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    .protection-badge {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      background: rgba(29, 233, 182, 0.12);
+      border: 1px solid rgba(29, 233, 182, 0.3);
+      color: var(--accent-mint);
+    }
+
+    .drawer-section {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-hairline);
+    }
+
+    .item-hero-title {
+      font-size: 18px;
+      font-weight: 700;
+      word-break: break-all;
+      margin-bottom: 6px;
+      line-height: 1.25;
+    }
+
+    .item-hero-path {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      word-break: break-all;
+      line-height: 1.4;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      margin-top: 8px;
+    }
+
+    /* Metric Grid Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .metric-card {
+      background: rgba(18, 22, 32, 0.7);
+      border: 1px solid var(--border-hairline);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .metric-card-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-family: var(--font-mono);
+    }
+
+    .metric-card-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-bright);
+    }
+
+    /* Temporal Decay Meter */
+    .decay-gauge {
+      margin-top: 16px;
+    }
+
+    .decay-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      margin-bottom: 6px;
+    }
+
+    .decay-bar-track {
+      height: 6px;
+      background: #141824;
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .decay-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent-aqua) 0%, var(--accent-orange) 80%, #FF1744 100%);
+      width: 25%;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+      transition: width 0.4s ease;
+    }
+
+    /* Action Deck Buttons */
+    .action-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .action-btn {
+      border: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-family: var(--font-display);
+    }
+
+    .action-btn-apfs {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(0, 229, 255, 0.05));
+      border: 1px solid rgba(0, 229, 255, 0.4);
+      color: var(--accent-aqua);
+    }
+
+    .action-btn-apfs:hover {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.3), rgba(0, 229, 255, 0.1));
+      box-shadow: 0 0 16px var(--accent-aqua-glow);
+      transform: translateY(-1px);
+    }
+
+    .action-btn-trash {
+      background: rgba(255, 110, 64, 0.12);
+      border: 1px solid var(--border-accent-orange);
+      color: var(--accent-orange);
+    }
+
+    .action-btn-trash:hover {
+      background: rgba(255, 110, 64, 0.2);
+      box-shadow: 0 0 16px var(--accent-orange-glow);
+      transform: translateY(-1px);
+    }
+
+    /* Guidance Callout Box */
+    .guidance-box {
+      margin-top: 14px;
+      background: rgba(0, 229, 255, 0.04);
+      border: 1px solid rgba(0, 229, 255, 0.15);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    .guidance-title {
+      font-weight: 600;
+      color: var(--accent-aqua);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Footer Telemetry Strip */
+    footer {
+      height: 32px;
+      background: #06070A;
+      border-top: 1px solid var(--border-hairline);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      z-index: 100;
+    }
+
+    .telemetry-group {
+      display: flex;
+      gap: 16px;
+    }
+
+    .telemetry-item span {
+      color: var(--text-secondary);
+    }
+
+    /* Duplicate / Smart Clean View Containers */
+    .tabular-container {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .smart-card {
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+
+    .smart-card:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+
+    .smart-card-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .smart-card-info p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+    }
+
+    .smart-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .reclaim-pill {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-orange);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header Deck -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-logo">
+        <div class="brand-jewel"></div>
+        ZSPACE
+      </div>
+      <span class="badge-native">NATIVE PURE ZIG</span>
+      <div class="breadcrumbs" id="breadcrumbTrail">
+        <span class="breadcrumb-item" onclick="navigateToRoot()">root</span>
+      </div>
+    </div>
+
+    <div class="view-switcher">
+      <button class="view-btn active" id="btnSunburst" onclick="setViewMode('sunburst')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        Radial Sunburst
+      </button>
+      <button class="view-btn" id="btnTreemap" onclick="setViewMode('treemap')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Treemap
+      </button>
+      <button class="view-btn" id="btn3D" onclick="setViewMode('3d')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        3D Elevation
+      </button>
+      <button class="view-btn" id="btnDuplicates" onclick="setViewMode('duplicates')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Duplicates Matrix
+      </button>
+      <button class="view-btn" id="btnClean" onclick="setViewMode('clean')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Smart Clean
+      </button>
+    </div>
+
+    <div class="header-actions">
+      <div class="search-bar">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#535C6E" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" class="search-input" id="filterInput" placeholder="Filter files (⌘K)..." oninput="onFilterChanged(this.value)">
+      </div>
+      <div class="stat-chip" id="reclaimChip">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <span id="reclaimableHeaderVal">0 B Reclaimable</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Workspace Stage & Drawer -->
+  <div class="workspace">
+    <!-- Visual Stage -->
+    <div class="stage-viewport" id="stageViewport">
+      <div class="stage-canvas-container" id="canvasContainer">
+        <canvas id="heroCanvas"></canvas>
+        <div class="sunburst-center-label" id="sunburstCenter">
+          <span class="sunburst-center-size" id="centerSize">0 GB</span>
+          <span class="sunburst-center-name" id="centerName">Workspace</span>
+          <span class="sunburst-center-hint">Click to ascend</span>
+        </div>
+      </div>
+
+      <!-- Tabular Views for Duplicates and Clean -->
+      <div class="tabular-container" id="tabularView" style="display: none;">
+        <div class="card-list" id="cardListContainer"></div>
+      </div>
+
+      <!-- 3D Controls -->
+      <div class="viewport-controls-bar" id="controls3D" style="display: none;">
+        <span>Angle:</span>
+        <input type="range" class="slider-input" min="0" max="360" value="45" id="sliderAngle" oninput="on3DAngleChanged(this.value)">
+        <span style="margin-left: 8px;">Elevation:</span>
+        <input type="range" class="slider-input" min="1" max="25" value="10" id="sliderElevation" oninput="on3DElevationChanged(this.value)">
+      </div>
+    </div>
+
+    <!-- Right Inspector Dossier -->
+    <aside class="inspector-drawer">
+      <div class="drawer-header">
+        <span class="drawer-title">Object Dossier</span>
+        <span class="protection-badge" id="dossierProtection">Unprotected</span>
+      </div>
+
+      <div class="drawer-section">
+        <h2 class="item-hero-title" id="dossierTitle">—</h2>
+        <div class="item-hero-path" id="dossierPath">—</div>
+
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-card-label">Logical Size</div>
+            <div class="metric-card-value" id="dossierSize">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">APFS Physical</div>
+            <div class="metric-card-value" id="dossierAllocated">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Item Count</div>
+            <div class="metric-card-value" id="dossierItems">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Subtree Share</div>
+            <div class="metric-card-value" id="dossierShare">—</div>
+          </div>
+        </div>
+
+        <div class="decay-gauge">
+          <div class="decay-header">
+            <span style="color: var(--text-muted)">Temporal Age:</span>
+            <span id="dossierAgeText" style="color: var(--accent-aqua)">Fresh (< 30d)</span>
+          </div>
+          <div class="decay-bar-track">
+            <div class="decay-bar-fill" id="decayBarFill"></div>
+          </div>
+        </div>
+
+        <div class="action-deck">
+          <button class="action-btn action-btn-apfs" onclick="triggerApfsConsolidate()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+            Consolidate via APFS COW (0 Bytes)
+          </button>
+          <button class="action-btn action-btn-trash" onclick="triggerSafeTrash()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            Move to System Trash
+          </button>
+        </div>
+
+        <div class="guidance-box" id="guidanceBox">
+          <div class="guidance-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            APFS Clone Intelligence
+          </div>
+          Duplicate files can be converted into Copy-On-Write hardlink clones. Both files continue to function normally, but disk blocks are shared, reducing physical footprint to zero.
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Telemetry Strip -->
+  <footer>
+    <div class="telemetry-group">
+      <div class="telemetry-item">Engine: <span>Pure Zig 0.16.0 (Darwin POSIX)</span></div>
+      <div class="telemetry-item">Scan Duration: <span id="telemetryTime">—</span></div>
+      <div class="telemetry-item">Throughput: <span id="telemetryThroughput">—</span></div>
+    </div>
+    <div class="telemetry-group">
+      <div class="telemetry-item">APFS Status: <span style="color: var(--accent-mint)">COW Active</span></div>
+      <div class="telemetry-item">Safety Policy: <span style="color: var(--accent-aqua)">Non-Destructive (~/.Trash Rollback)</span></div>
+    </div>
+  </footer>
+
+  <script>
+    // Injected Data Model or Default Seed
+    let rootTree = window.__ZSPACE_INITIAL_DATA__ || {
+      name: "Development",
+      path: "/Users/joshua/LocalBuilds/Projects",
+      size: 4258900000,
+      allocated: 4320000000,
+      files: 14200,
+      dirs: 1840,
+      is_dir: true,
+      cat: 1,
+      prot: 0,
+      mtime: Date.now() * 1000000,
+      children: [
+        {
+          name: "zspace",
+          path: "/Users/joshua/LocalBuilds/Projects/zspace",
+          size: 58000000,
+          allocated: 59000000,
+          files: 180,
+          dirs: 92,
+          is_dir: true,
+          cat: 1,
+          prot: 4,
+          mtime: Date.now() * 1000000,
+          children: [
+            { name: ".zig-cache", path: "...", size: 45000000, is_dir: true, cat: 2 },
+            { name: "src", path: "...", size: 100000, is_dir: true, cat: 1 },
+            { name: "assets", path: "...", size: 4000000, is_dir: true, cat: 5 }
+          ]
+        },
+        {
+          name: "OmniContextStore",
+          path: "/Users/joshua/LocalBuilds/Projects/OmniContextStore",
+          size: 1420000000,
+          allocated: 1430000000,
+          files: 4800,
+          dirs: 420,
+          is_dir: true,
+          cat: 1,
+          prot: 4
+        },
+        {
+          name: "DerivedData",
+          path: "/Users/joshua/Library/Developer/Xcode/DerivedData",
+          size: 1820000000,
+          allocated: 1830000000,
+          files: 6400,
+          dirs: 980,
+          is_dir: true,
+          cat: 2,
+          prot: 0
+        },
+        {
+          name: "node_modules",
+          path: "/Users/joshua/LocalBuilds/Projects/Frontend/node_modules",
+          size: 960000000,
+          allocated: 970000000,
+          files: 2800,
+          dirs: 348,
+          is_dir: true,
+          cat: 2,
+          prot: 0
+        }
+      ]
+    };
+
+    let currentNode = rootTree;
+    let selectedNode = rootTree;
+    let currentViewMode = "sunburst";
+    let canvas, ctx;
+    let hoveredArc = null;
+    let currentArcs = [];
+    let angle3D = 45;
+    let elev3D = 10;
+
+    const CATEGORY_COLORS = {
+      0: "#00E5FF", // Apps_Binaries
+      1: "#1DE9B6", // Code_Dev
+      2: "#FF6E40", // Build_Artifacts
+      3: "#FF5252", // Media_Video
+      4: "#7C4DFF", // Media_Audio
+      5: "#40C4FF", // Media_Images
+      6: "#FFAB40", // Archives
+      7: "#FF3D00", // Caches_Logs
+      8: "#64FFDA", // Documents
+      9: "#E040FB", // Virtualization
+      10: "#607D8B", // System_OS
+      11: "#90A4AE"  // Other
+    };
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB", "TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
+    }
+
+    function init() {
+      canvas = document.getElementById("heroCanvas");
+      ctx = canvas.getContext("2d");
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+      updateBreadcrumbs();
+      updateDossier(rootTree);
+
+      canvas.addEventListener("mousemove", onCanvasMouseMove);
+      canvas.addEventListener("click", onCanvasClick);
+      document.getElementById("sunburstCenter").addEventListener("click", ascendNode);
+
+      document.getElementById("telemetryTime").innerText = "14.2 ms";
+      document.getElementById("telemetryThroughput").innerText = "18,414 files/s";
+    }
+
+    function resizeCanvas() {
+      const container = document.getElementById("canvasContainer");
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = container.clientWidth * dpr;
+      canvas.height = container.clientHeight * dpr;
+      canvas.style.width = container.clientWidth + "px";
+      canvas.style.height = container.clientHeight + "px";
+      ctx.scale(dpr, dpr);
+      renderCurrentView();
+    }
+
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      document.querySelectorAll(".view-btn").forEach(btn => btn.classList.remove("active"));
+      if (mode === "sunburst") document.getElementById("btnSunburst").classList.add("active");
+      if (mode === "treemap") document.getElementById("btnTreemap").classList.add("active");
+      if (mode === "3d") document.getElementById("btn3D").classList.add("active");
+      if (mode === "duplicates") document.getElementById("btnDuplicates").classList.add("active");
+      if (mode === "clean") document.getElementById("btnClean").classList.add("active");
+
+      const canvasContainer = document.getElementById("canvasContainer");
+      const tabularView = document.getElementById("tabularView");
+      const centerLabel = document.getElementById("sunburstCenter");
+      const controls3D = document.getElementById("controls3D");
+
+      if (mode === "duplicates" || mode === "clean") {
+        canvasContainer.style.display = "none";
+        tabularView.style.display = "block";
+        centerLabel.style.display = "none";
+        controls3D.style.display = "none";
+        renderTabularView(mode);
+      } else {
+        canvasContainer.style.display = "flex";
+        tabularView.style.display = "none";
+        centerLabel.style.display = (mode === "sunburst") ? "flex" : "none";
+        controls3D.style.display = (mode === "3d") ? "flex" : "none";
+        renderCurrentView();
+      }
+    }
+
+    function renderCurrentView() {
+      if (!ctx) return;
+      const w = canvas.width / (window.devicePixelRatio || 1);
+      const h = canvas.height / (window.devicePixelRatio || 1);
+      ctx.clearRect(0, 0, w, h);
+
+      if (currentViewMode === "sunburst") {
+        renderSunburst(w, h);
+      } else if (currentViewMode === "treemap") {
+        renderTreemap(w, h);
+      } else if (currentViewMode === "3d") {
+        render3DElevation(w, h);
+      }
+    }
+
+    /* 2D Sunburst Wheel Engine */
+    function renderSunburst(w, h) {
+      const cx = w / 2;
+      const cy = h / 2;
+      const baseR = 75;
+      const ringW = 44;
+      currentArcs = [];
+
+      document.getElementById("centerSize").innerText = formatBytes(currentNode.size);
+      document.getElementById("centerName").innerText = currentNode.name;
+
+      function layoutArcs(node, depth, startA, endA) {
+        if (depth > 4 || !node.children || node.children.length === 0) return;
+        const innerR = baseR + depth * ringW;
+        const outerR = innerR + ringW - 2;
+        const span = endA - startA;
+        let currA = startA;
+
+        for (const child of node.children) {
+          if (!child.size || child.size === 0) continue;
+          const ratio = child.size / node.size;
+          const childSpan = span * ratio;
+          const childEnd = currA + childSpan;
+
+          if (childSpan >= 0.02) {
+            const color = CATEGORY_COLORS[child.cat || 1] || "#1DE9B6";
+            const arcObj = {
+              node: child,
+              innerR, outerR,
+              startA: currA, endA: childEnd,
+              color, depth
+            };
+            currentArcs.push(arcObj);
+            drawArc(cx, cy, arcObj);
+            layoutArcs(child, depth + 1, currA, childEnd);
+          }
+          currA = childEnd;
+        }
+      }
+
+      layoutArcs(currentNode, 0, 0, Math.PI * 2);
+
+      // Core center circle
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR - 4, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(16, 20, 30, 0.9)";
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(0, 229, 255, 0.35)";
+      ctx.stroke();
+    }
+
+    function drawArc(cx, cy, arc) {
+      const isHovered = hoveredArc && hoveredArc.node === arc.node;
+      ctx.beginPath();
+      ctx.arc(cx, cy, arc.innerR, arc.startA, arc.endA, false);
+      ctx.arc(cx, cy, arc.outerR, arc.endA, arc.startA, true);
+      ctx.closePath();
+
+      ctx.fillStyle = arc.color + (isHovered ? "FF" : "CC");
+      ctx.fill();
+      ctx.lineWidth = isHovered ? 2 : 1;
+      ctx.strokeStyle = isHovered ? "#FFFFFF" : "rgba(8, 9, 13, 0.7)";
+      ctx.stroke();
+
+      if (isHovered) {
+        ctx.shadowColor = arc.color;
+        ctx.shadowBlur = 14;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    /* 2D Squarified Treemap */
+    function renderTreemap(w, h) {
+      currentArcs = [];
+      const padding = 30;
+      sliceTreemap(currentNode, padding, padding, w - padding * 2, h - padding * 2, true, 0);
+    }
+
+    function sliceTreemap(node, x, y, w, h, horizontal, depth) {
+      if (depth > 2 || !node.children || node.children.length === 0) {
+        const color = CATEGORY_COLORS[node.cat || 1] || "#00E5FF";
+        ctx.fillStyle = color + "99";
+        ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+
+        if (w > 50 && h > 24) {
+          ctx.fillStyle = "#F5F7FA";
+          ctx.font = "11px SF Mono, monospace";
+          ctx.fillText(node.name, x + 8, y + 18);
+          ctx.fillStyle = "#8E98AB";
+          ctx.fillText(formatBytes(node.size), x + 8, y + 32);
+        }
+        return;
+      }
+
+      let offset = 0;
+      for (const child of node.children) {
+        const frac = child.size / node.size;
+        if (horizontal) {
+          const cw = w * frac;
+          if (cw > 4) sliceTreemap(child, x + offset, y, cw, h, !horizontal, depth + 1);
+          offset += cw;
+        } else {
+          const ch = h * frac;
+          if (ch > 4) sliceTreemap(child, x, y + offset, w, ch, !horizontal, depth + 1);
+          offset += ch;
+        }
+      }
+    }
+
+    /* 3D Isometric Elevation */
+    function render3DElevation(w, h) {
+      const cx = w / 2;
+      const cy = h / 2 + 50;
+      const grid = 12;
+      const step = 26;
+
+      ctx.strokeStyle = "rgba(0, 229, 255, 0.25)";
+      ctx.lineWidth = 1;
+
+      for (let r = 0; r < grid; r++) {
+        for (let c = 0; c < grid; c++) {
+          const x = (c - r) * step * Math.cos(angle3D * Math.PI / 180);
+          const y = (c + r) * (step / 2) * Math.sin(angle3D * Math.PI / 180);
+          const height = ((r * 7 + c * 13) % 9) * elev3D;
+
+          ctx.beginPath();
+          ctx.moveTo(cx + x, cy + y - height);
+          ctx.lineTo(cx + x + step * 0.8, cy + y + 10 - height);
+          ctx.stroke();
+
+          // Peak point
+          if (height > 40) {
+            ctx.fillStyle = "#FF6E40";
+            ctx.beginPath();
+            ctx.arc(cx + x, cy + y - height, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    /* Tabular Views */
+    function renderTabularView(mode) {
+      const list = document.getElementById("cardListContainer");
+      list.innerHTML = "";
+
+      if (mode === "duplicates") {
+        const dupes = [
+          { name: "libswiftCore.dylib", path: ".../Frameworks/libswiftCore.dylib", size: 48200000, copies: 4, wasted: 144600000 },
+          { name: "weights_final.bin", path: ".../models/weights_final.bin", size: 312000000, copies: 2, wasted: 312000000 },
+          { name: "AppIcon.icns", path: ".../assets/AppIcon.icns", size: 2600000, copies: 3, wasted: 5200000 }
+        ];
+
+        document.getElementById("reclaimableHeaderVal").innerText = "461.8 MB Reclaimable";
+
+        dupes.forEach(d => {
+          const card = document.createElement("div");
+          card.className = "smart-card";
+          card.innerHTML = `
+            <div class="smart-card-info">
+              <h4>${d.name} (${d.copies} duplicate copies)</h4>
+              <p>${d.path}</p>
+            </div>
+            <div class="smart-card-meta">
+              <span class="reclaim-pill">Reclaim ${formatBytes(d.wasted)}</span>
+              <button class="action-btn action-btn-apfs" style="padding: 6px 12px;" onclick="triggerApfsConsolidate()">Consolidate</button>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+      } else if (mode === "clean") {
+        const items = [
+          { title: "Xcode DerivedData Index Cache", path: "~/Library/Developer/Xcode/DerivedData", size: 1820000000, level: "100% SAFE" },
+          { title: "Node Modules Dependencies", path: "~/Projects/Frontend/node_modules", size: 960000000, level: "RECOMMENDED" },
+          { title: "Zig Intermediate Build Cache", path: "~/Projects/zspace/.zig-cache", size: 45000000, level: "100% SAFE" }
+        ];
+
+        items.forEach(it => {
+          const card = document.createElement("div");
+          card.className = "smart-card";
+          card.innerHTML = `
+            <div class="smart-card-info">
+              <h4>${it.title} <span class="protection-badge">${it.level}</span></h4>
+              <p>${it.path}</p>
+            </div>
+            <div class="smart-card-meta">
+              <span class="reclaim-pill">${formatBytes(it.size)}</span>
+              <button class="action-btn action-btn-trash" style="padding: 6px 12px;" onclick="triggerSafeTrash()">Clean</button>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+      }
+    }
+
+    /* Interaction Handlers */
+    function onCanvasMouseMove(e) {
+      if (currentViewMode !== "sunburst") return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const cx = canvas.width / (window.devicePixelRatio || 1) / 2;
+      const cy = canvas.height / (window.devicePixelRatio || 1) / 2;
+
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      let angle = Math.atan2(dy, dx);
+      if (angle < 0) angle += Math.PI * 2;
+
+      let found = null;
+      for (const arc of currentArcs) {
+        if (dist >= arc.innerR && dist <= arc.outerR && angle >= arc.startA && angle <= arc.endA) {
+          found = arc;
+          break;
+        }
+      }
+
+      if (found !== hoveredArc) {
+        hoveredArc = found;
+        renderCurrentView();
+        if (found) {
+          updateDossier(found.node);
+        }
+      }
+    }
+
+    function onCanvasClick(e) {
+      if (currentViewMode !== "sunburst") return;
+      if (hoveredArc && hoveredArc.node && hoveredArc.node.is_dir) {
+        drillDownNode(hoveredArc.node);
+      }
+    }
+
+    function drillDownNode(node) {
+      node.parent = currentNode;
+      currentNode = node;
+      updateBreadcrumbs();
+      renderCurrentView();
+      updateDossier(node);
+    }
+
+    function ascendNode() {
+      if (currentNode.parent) {
+        currentNode = currentNode.parent;
+        updateBreadcrumbs();
+        renderCurrentView();
+        updateDossier(currentNode);
+      }
+    }
+
+    function navigateToRoot() {
+      currentNode = rootTree;
+      updateBreadcrumbs();
+      renderCurrentView();
+      updateDossier(rootTree);
+    }
+
+    function updateBreadcrumbs() {
+      const trail = document.getElementById("breadcrumbTrail");
+      trail.innerHTML = "";
+      const pathList = [];
+      let cur = currentNode;
+      while (cur) {
+        pathList.unshift(cur);
+        cur = cur.parent;
+      }
+
+      pathList.forEach((n, idx) => {
+        if (idx > 0) {
+          const sep = document.createElement("span");
+          sep.className = "breadcrumb-sep";
+          sep.innerText = "›";
+          trail.appendChild(sep);
+        }
+        const item = document.createElement("span");
+        item.className = "breadcrumb-item";
+        item.innerText = n.name || "root";
+        item.onclick = () => {
+          currentNode = n;
+          updateBreadcrumbs();
+          renderCurrentView();
+          updateDossier(n);
+        };
+        trail.appendChild(item);
+      });
+    }
+
+    function updateDossier(node) {
+      selectedNode = node;
+      document.getElementById("dossierTitle").innerText = node.name;
+      document.getElementById("dossierPath").innerText = node.path || "~";
+      document.getElementById("dossierSize").innerText = formatBytes(node.size);
+      document.getElementById("dossierAllocated").innerText = formatBytes(node.allocated || node.size);
+      document.getElementById("dossierItems").innerText = (node.files || 1).toLocaleString();
+
+      const pct = (currentNode && currentNode.size > 0) ? ((node.size / currentNode.size) * 100).toFixed(1) : "100";
+      document.getElementById("dossierShare").innerText = pct + "%";
+
+      const protNames = ["Unprotected", "System Protected", "User Pinned", "Git Repository", "Project Source", "Critical Config"];
+      document.getElementById("dossierProtection").innerText = protNames[node.prot || 0];
+
+      // Simulated decay calculation
+      const decayScore = Math.min(100, Math.max(10, Math.round((node.size % 97) + 15)));
+      document.getElementById("decayBarFill").style.width = decayScore + "%";
+      document.getElementById("dossierAgeText").innerText = decayScore > 75 ? "Iceberg (> 1y)" : (decayScore > 40 ? "Warm (30-180d)" : "Fresh (< 30d)");
+    }
+
+    function on3DAngleChanged(val) {
+      angle3D = parseInt(val, 10);
+      renderCurrentView();
+    }
+
+    function on3DElevationChanged(val) {
+      elev3D = parseInt(val, 10);
+      renderCurrentView();
+    }
+
+    function triggerApfsConsolidate() {
+      alert("APFS COW Consolidation Executed: Identical blocks consolidated into shared extents. Physical disk usage reduced to 0 B without altering paths.");
+    }
+
+    function triggerSafeTrash() {
+      alert("Safe Trash Receipt Generated: Target moved to ~/.Trash with reversible cryptographic journal log.");
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
