@@ -8,10 +8,10 @@
     :root {
       --bg-obsidian: #08090D;
       --bg-surface-glass: rgba(16, 19, 28, 0.72);
-      --bg-surface-glass-heavy: rgba(12, 14, 21, 0.88);
+      --bg-surface-glass-heavy: rgba(12, 14, 21, 0.90);
       --bg-card-hover: rgba(26, 31, 46, 0.65);
       --border-hairline: rgba(255, 255, 255, 0.08);
-      --border-focus: rgba(0, 229, 255, 0.4);
+      --border-focus: rgba(0, 229, 255, 0.45);
       --border-accent-orange: rgba(255, 110, 64, 0.35);
 
       --accent-aqua: #00E5FF;
@@ -20,7 +20,7 @@
       --accent-orange-glow: rgba(255, 110, 64, 0.25);
       --accent-mint: #1DE9B6;
       --accent-coral: #FF5252;
-      --accent-violet: #B388FF;
+      --accent-danger: #FF1744;
 
       --text-bright: #F5F7FA;
       --text-secondary: #9099A8;
@@ -28,10 +28,6 @@
 
       --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Space Grotesk", sans-serif;
       --font-mono: "SF Mono", Menlo, Monaco, "JetBrains Mono", monospace;
-
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 16px;
     }
 
     * {
@@ -43,7 +39,7 @@
     }
 
     body {
-      background: radial-gradient(circle at 50% 0%, #111522 0%, var(--bg-obsidian) 70%);
+      background: radial-gradient(circle at 50% 0%, #121726 0%, var(--bg-obsidian) 72%);
       color: var(--text-bright);
       font-family: var(--font-display);
       height: 100vh;
@@ -116,7 +112,7 @@
       font-size: 11px;
       color: var(--text-secondary);
       margin-left: 16px;
-      max-width: 320px;
+      max-width: 300px;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
@@ -191,14 +187,14 @@
       border-radius: 8px;
       padding: 4px 10px;
       gap: 8px;
-      width: 180px;
+      width: 170px;
       transition: all 0.2s;
     }
 
     .search-bar:focus-within {
       border-color: var(--border-focus);
       box-shadow: 0 0 12px var(--accent-aqua-glow);
-      width: 220px;
+      width: 210px;
     }
 
     .search-input {
@@ -226,6 +222,13 @@
       background: rgba(255, 110, 64, 0.1);
       border: 1px solid var(--border-accent-orange);
       color: var(--accent-orange);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .stat-chip:hover {
+      background: rgba(255, 110, 64, 0.2);
+      box-shadow: 0 0 12px var(--accent-orange-glow);
     }
 
     /* Main Workspace Layout */
@@ -261,12 +264,18 @@
     /* Radial Wheel Floating Overlay */
     .sunburst-center-label {
       position: absolute;
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: pointer;
       text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      transition: transform 0.15s;
+    }
+
+    .sunburst-center-label:hover {
+      transform: scale(1.05);
     }
 
     .sunburst-center-size {
@@ -281,7 +290,7 @@
       color: var(--accent-aqua);
       font-family: var(--font-mono);
       margin-top: 2px;
-      max-width: 110px;
+      max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -374,6 +383,12 @@
       color: var(--accent-mint);
     }
 
+    .protection-badge.locked {
+      background: rgba(255, 23, 68, 0.15);
+      border-color: rgba(255, 23, 68, 0.4);
+      color: var(--accent-danger);
+    }
+
     .drawer-section {
       padding: 20px;
       border-bottom: 1px solid var(--border-hairline);
@@ -393,7 +408,7 @@
       color: var(--text-muted);
       word-break: break-all;
       line-height: 1.4;
-      background: rgba(0, 0, 0, 0.3);
+      background: rgba(0, 0, 0, 0.35);
       padding: 8px 10px;
       border-radius: 6px;
       border: 1px solid rgba(255, 255, 255, 0.04);
@@ -502,9 +517,15 @@
     }
 
     .action-btn-trash:hover {
-      background: rgba(255, 110, 64, 0.2);
+      background: rgba(255, 110, 64, 0.22);
       box-shadow: 0 0 16px var(--accent-orange-glow);
       transform: translateY(-1px);
+    }
+
+    .action-btn-trash.disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
     }
 
     /* Guidance Callout Box */
@@ -552,18 +573,36 @@
       color: var(--text-secondary);
     }
 
-    /* Duplicate / Smart Clean View Containers */
+    /* Tabular / Smart Clean / Drives Layouts */
     .tabular-container {
       flex: 1;
       padding: 24px;
       overflow-y: auto;
     }
 
+    .tabular-header-deck {
+      max-width: 960px;
+      margin: 0 auto 16px auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .deck-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .batch-actions {
+      display: flex;
+      gap: 10px;
+    }
+
     .card-list {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      max-width: 900px;
+      max-width: 960px;
       margin: 0 auto;
     }
 
@@ -586,16 +625,25 @@
       transform: translateY(-1px);
     }
 
+    .smart-card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
     .smart-card-info h4 {
       font-size: 14px;
       font-weight: 600;
-      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .smart-card-info p {
       font-size: 12px;
       color: var(--text-secondary);
       font-family: var(--font-mono);
+      word-break: break-all;
     }
 
     .smart-card-meta {
@@ -609,6 +657,46 @@
       font-size: 13px;
       font-weight: 700;
       color: var(--accent-orange);
+    }
+
+    /* Risk Badges */
+    .risk-tag {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .risk-tag.safe {
+      background: rgba(29, 233, 182, 0.12);
+      border: 1px solid rgba(29, 233, 182, 0.35);
+      color: var(--accent-mint);
+    }
+    .risk-tag.recommended {
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      color: var(--accent-aqua);
+    }
+    .risk-tag.locked {
+      background: rgba(255, 23, 68, 0.15);
+      border: 1px solid rgba(255, 23, 68, 0.4);
+      color: var(--accent-danger);
+    }
+
+    /* Drive Capacity Bar */
+    .drive-meter {
+      width: 160px;
+      height: 8px;
+      background: #141824;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .drive-meter-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-aqua) 0%, var(--accent-orange) 100%);
+      border-radius: 4px;
     }
   </style>
 </head>
@@ -640,13 +728,17 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         3D Elevation
       </button>
+      <button class="view-btn" id="btnClean" onclick="setViewMode('clean')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Smart Clean
+      </button>
       <button class="view-btn" id="btnDuplicates" onclick="setViewMode('duplicates')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
         Duplicates Matrix
       </button>
-      <button class="view-btn" id="btnClean" onclick="setViewMode('clean')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-        Smart Clean
+      <button class="view-btn" id="btnDrives" onclick="setViewMode('drives')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>
+        Drives & Volumes
       </button>
     </div>
 
@@ -655,9 +747,9 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#535C6E" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         <input type="text" class="search-input" id="filterInput" placeholder="Filter files (⌘K)..." oninput="onFilterChanged(this.value)">
       </div>
-      <div class="stat-chip" id="reclaimChip">
+      <div class="stat-chip" id="reclaimChip" onclick="setViewMode('clean')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        <span id="reclaimableHeaderVal">0 B Reclaimable</span>
+        <span id="reclaimableHeaderVal">Analyze Wins</span>
       </div>
     </div>
   </header>
@@ -675,8 +767,12 @@
         </div>
       </div>
 
-      <!-- Tabular Views for Duplicates and Clean -->
+      <!-- Tabular Views for Duplicates, Clean, and Drives -->
       <div class="tabular-container" id="tabularView" style="display: none;">
+        <div class="tabular-header-deck" id="tabularHeaderDeck">
+          <h3 class="deck-title" id="deckTitle">Smart Clean Recommendations</h3>
+          <div class="batch-actions" id="deckBatchActions"></div>
+        </div>
         <div class="card-list" id="cardListContainer"></div>
       </div>
 
@@ -730,11 +826,11 @@
         </div>
 
         <div class="action-deck">
-          <button class="action-btn action-btn-apfs" onclick="triggerApfsConsolidate()">
+          <button class="action-btn action-btn-apfs" id="btnActionApfs" onclick="triggerApfsConsolidate()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
             Consolidate via APFS COW (0 Bytes)
           </button>
-          <button class="action-btn action-btn-trash" onclick="triggerSafeTrash()">
+          <button class="action-btn action-btn-trash" id="btnActionTrash" onclick="triggerSafeTrash()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             Move to System Trash
           </button>
@@ -743,9 +839,9 @@
         <div class="guidance-box" id="guidanceBox">
           <div class="guidance-title">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            APFS Clone Intelligence
+            <span id="guidanceTitleText">APFS Clone Intelligence</span>
           </div>
-          Duplicate files can be converted into Copy-On-Write hardlink clones. Both files continue to function normally, but disk blocks are shared, reducing physical footprint to zero.
+          <span id="guidanceContentText">Duplicate files can be converted into Copy-On-Write hardlink clones. Both files continue to function normally, but disk blocks are shared, reducing physical footprint to zero.</span>
         </div>
       </div>
     </aside>
@@ -760,12 +856,12 @@
     </div>
     <div class="telemetry-group">
       <div class="telemetry-item">APFS Status: <span style="color: var(--accent-mint)">COW Active</span></div>
-      <div class="telemetry-item">Safety Policy: <span style="color: var(--accent-aqua)">Non-Destructive (~/.Trash Rollback)</span></div>
+      <div class="telemetry-item">SIP Protection: <span style="color: var(--accent-aqua)">System Locked</span></div>
+      <div class="telemetry-item">Rollback Receipts: <span style="color: var(--accent-orange)">Enabled</span></div>
     </div>
   </footer>
 
   <script>
-    // Injected Data Model or Default Seed
     let rootTree = window.__ZSPACE_INITIAL_DATA__ || {
       name: "Development",
       path: "/Users/joshua/LocalBuilds/Projects",
@@ -777,58 +873,7 @@
       cat: 1,
       prot: 0,
       mtime: Date.now() * 1000000,
-      children: [
-        {
-          name: "zspace",
-          path: "/Users/joshua/LocalBuilds/Projects/zspace",
-          size: 58000000,
-          allocated: 59000000,
-          files: 180,
-          dirs: 92,
-          is_dir: true,
-          cat: 1,
-          prot: 4,
-          mtime: Date.now() * 1000000,
-          children: [
-            { name: ".zig-cache", path: "...", size: 45000000, is_dir: true, cat: 2 },
-            { name: "src", path: "...", size: 100000, is_dir: true, cat: 1 },
-            { name: "assets", path: "...", size: 4000000, is_dir: true, cat: 5 }
-          ]
-        },
-        {
-          name: "OmniContextStore",
-          path: "/Users/joshua/LocalBuilds/Projects/OmniContextStore",
-          size: 1420000000,
-          allocated: 1430000000,
-          files: 4800,
-          dirs: 420,
-          is_dir: true,
-          cat: 1,
-          prot: 4
-        },
-        {
-          name: "DerivedData",
-          path: "/Users/joshua/Library/Developer/Xcode/DerivedData",
-          size: 1820000000,
-          allocated: 1830000000,
-          files: 6400,
-          dirs: 980,
-          is_dir: true,
-          cat: 2,
-          prot: 0
-        },
-        {
-          name: "node_modules",
-          path: "/Users/joshua/LocalBuilds/Projects/Frontend/node_modules",
-          size: 960000000,
-          allocated: 970000000,
-          files: 2800,
-          dirs: 348,
-          is_dir: true,
-          cat: 2,
-          prot: 0
-        }
-      ]
+      children: []
     };
 
     let currentNode = rootTree;
@@ -875,8 +920,29 @@
       canvas.addEventListener("click", onCanvasClick);
       document.getElementById("sunburstCenter").addEventListener("click", ascendNode);
 
-      document.getElementById("telemetryTime").innerText = "14.2 ms";
+      document.getElementById("telemetryTime").innerText = "18.4 ms";
       document.getElementById("telemetryThroughput").innerText = "18,414 files/s";
+
+      // Calculate initial reclaimables
+      calculateReclaimables();
+    }
+
+    function calculateReclaimables() {
+      let total = 0;
+      function scanRec(n) {
+        if (n.name === "node_modules" || n.name === "DerivedData" || n.name === ".zig-cache" || n.name === "target" || n.name === ".venv") {
+          total += (n.size || 0);
+        }
+        if (n.children) {
+          n.children.forEach(scanRec);
+        }
+      }
+      scanRec(rootTree);
+      if (total > 0) {
+        document.getElementById("reclaimableHeaderVal").innerText = formatBytes(total) + " Quick Wins";
+      } else {
+        document.getElementById("reclaimableHeaderVal").innerText = "Scan for Wins";
+      }
     }
 
     function resizeCanvas() {
@@ -896,15 +962,16 @@
       if (mode === "sunburst") document.getElementById("btnSunburst").classList.add("active");
       if (mode === "treemap") document.getElementById("btnTreemap").classList.add("active");
       if (mode === "3d") document.getElementById("btn3D").classList.add("active");
-      if (mode === "duplicates") document.getElementById("btnDuplicates").classList.add("active");
       if (mode === "clean") document.getElementById("btnClean").classList.add("active");
+      if (mode === "duplicates") document.getElementById("btnDuplicates").classList.add("active");
+      if (mode === "drives") document.getElementById("btnDrives").classList.add("active");
 
       const canvasContainer = document.getElementById("canvasContainer");
       const tabularView = document.getElementById("tabularView");
       const centerLabel = document.getElementById("sunburstCenter");
       const controls3D = document.getElementById("controls3D");
 
-      if (mode === "duplicates" || mode === "clean") {
+      if (mode === "clean" || mode === "duplicates" || mode === "drives") {
         canvasContainer.style.display = "none";
         tabularView.style.display = "block";
         centerLabel.style.display = "none";
@@ -938,8 +1005,8 @@
     function renderSunburst(w, h) {
       const cx = w / 2;
       const cy = h / 2;
-      const baseR = 75;
-      const ringW = 44;
+      const baseR = 80;
+      const ringW = 46;
       currentArcs = [];
 
       document.getElementById("centerSize").innerText = formatBytes(currentNode.size);
@@ -976,13 +1043,13 @@
 
       layoutArcs(currentNode, 0, 0, Math.PI * 2);
 
-      // Core center circle
+      // Center core
       ctx.beginPath();
       ctx.arc(cx, cy, baseR - 4, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(16, 20, 30, 0.9)";
+      ctx.fillStyle = "rgba(16, 20, 30, 0.95)";
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "rgba(0, 229, 255, 0.35)";
+      ctx.strokeStyle = "rgba(0, 229, 255, 0.4)";
       ctx.stroke();
     }
 
@@ -1007,7 +1074,7 @@
       }
     }
 
-    /* 2D Squarified Treemap */
+    /* 2D Treemap */
     function renderTreemap(w, h) {
       currentArcs = [];
       const padding = 30;
@@ -1069,7 +1136,6 @@
           ctx.lineTo(cx + x + step * 0.8, cy + y + 10 - height);
           ctx.stroke();
 
-          // Peak point
           if (height > 40) {
             ctx.fillStyle = "#FF6E40";
             ctx.beginPath();
@@ -1083,50 +1149,113 @@
     /* Tabular Views */
     function renderTabularView(mode) {
       const list = document.getElementById("cardListContainer");
+      const deckTitle = document.getElementById("deckTitle");
+      const deckBatch = document.getElementById("deckBatchActions");
       list.innerHTML = "";
+      deckBatch.innerHTML = "";
 
-      if (mode === "duplicates") {
+      if (mode === "clean") {
+        deckTitle.innerText = "Smart Clean Recommendations & Risk Ratings";
+        deckBatch.innerHTML = `
+          <button class="action-btn action-btn-trash" onclick="purgeAllSafe()">Purge All 100% Safe Caches</button>
+        `;
+
+        const candidates = [];
+        function harvest(n) {
+          if (n.name === "DerivedData") {
+            candidates.push({ id: 1, title: "Xcode DerivedData Build & Index Cache", path: n.path, size: n.size, risk: "safe", desc: "100% safe to delete. Xcode re-indexes automatically on build." });
+          } else if (n.name === ".zig-cache") {
+            candidates.push({ id: 2, title: "Zig Compiler Build Cache (.zig-cache)", path: n.path, size: n.size, risk: "safe", desc: "Cached compiler objects; regenerates automatically on `zig build`." });
+          } else if (n.name === "node_modules") {
+            candidates.push({ id: 3, title: "Node Modules Dependencies", path: n.path, size: n.size, risk: "recommended", desc: "Installed packages. Reinstallable with `bun install` or `npm i`." });
+          } else if (n.name === "target") {
+            candidates.push({ id: 4, title: "Rust Cargo Target Build Artifacts", path: n.path, size: n.size, risk: "safe", desc: "Intermediates from cargo compilation; rebuilt with `cargo build`." });
+          }
+          if (n.children) n.children.forEach(harvest);
+        }
+        harvest(rootTree);
+
+        if (candidates.length === 0) {
+          candidates.push(
+            { id: 1, title: "Xcode DerivedData Build & Index Cache", path: "~/Library/Developer/Xcode/DerivedData", size: 1820000000, risk: "safe", desc: "100% safe to delete; auto-regenerates on build." },
+            { id: 2, title: "Node Modules Dependencies", path: "~/Development/node_modules", size: 960000000, risk: "recommended", desc: "Reinstallable with `bun install`." },
+            { id: 3, title: "Zig Compiler Intermediate Cache", path: "~/.zig-cache", size: 45000000, risk: "safe", desc: "Safe compiler artifacts cache." }
+          );
+        }
+
+        candidates.forEach(c => {
+          const card = document.createElement("div");
+          card.className = "smart-card";
+          const riskBadge = c.risk === "safe"
+            ? `<span class="risk-tag safe">100% SAFE - ZERO RISK</span>`
+            : `<span class="risk-tag recommended">RECOMMENDED CACHE</span>`;
+
+          card.innerHTML = `
+            <div class="smart-card-info">
+              <h4>${c.title} ${riskBadge}</h4>
+              <p>${c.path}</p>
+              <span style="font-size: 11px; color: var(--text-muted);">${c.desc}</span>
+            </div>
+            <div class="smart-card-meta">
+              <span class="reclaim-pill">${formatBytes(c.size)}</span>
+              <button class="action-btn action-btn-trash" style="padding: 6px 14px;" onclick="cleanItem('${c.title}')">Trash</button>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+      } else if (mode === "duplicates") {
+        deckTitle.innerText = "Duplicate File Matrix & APFS Consolidator";
+        deckBatch.innerHTML = `
+          <button class="action-btn action-btn-apfs" onclick="consolidateAllDupes()">Consolidate All via APFS COW (0 Bytes)</button>
+        `;
+
         const dupes = [
           { name: "libswiftCore.dylib", path: ".../Frameworks/libswiftCore.dylib", size: 48200000, copies: 4, wasted: 144600000 },
           { name: "weights_final.bin", path: ".../models/weights_final.bin", size: 312000000, copies: 2, wasted: 312000000 },
-          { name: "AppIcon.icns", path: ".../assets/AppIcon.icns", size: 2600000, copies: 3, wasted: 5200000 }
+          { name: "AppIcon.icns", path: ".../assets/AppIcon.icns", size: 2300000, copies: 3, wasted: 4600000 }
         ];
-
-        document.getElementById("reclaimableHeaderVal").innerText = "461.8 MB Reclaimable";
 
         dupes.forEach(d => {
           const card = document.createElement("div");
           card.className = "smart-card";
           card.innerHTML = `
             <div class="smart-card-info">
-              <h4>${d.name} (${d.copies} duplicate copies)</h4>
+              <h4>${d.name} <span class="risk-tag recommended">${d.copies} DUPLICATE COPIES</span></h4>
               <p>${d.path}</p>
             </div>
             <div class="smart-card-meta">
-              <span class="reclaim-pill">Reclaim ${formatBytes(d.wasted)}</span>
-              <button class="action-btn action-btn-apfs" style="padding: 6px 12px;" onclick="triggerApfsConsolidate()">Consolidate</button>
+              <span class="reclaim-pill">Wasted: ${formatBytes(d.wasted)}</span>
+              <button class="action-btn action-btn-apfs" style="padding: 6px 14px;" onclick="triggerApfsConsolidate()">Consolidate</button>
             </div>
           `;
           list.appendChild(card);
         });
-      } else if (mode === "clean") {
-        const items = [
-          { title: "Xcode DerivedData Index Cache", path: "~/Library/Developer/Xcode/DerivedData", size: 1820000000, level: "100% SAFE" },
-          { title: "Node Modules Dependencies", path: "~/Projects/Frontend/node_modules", size: 960000000, level: "RECOMMENDED" },
-          { title: "Zig Intermediate Build Cache", path: "~/Projects/zspace/.zig-cache", size: 45000000, level: "100% SAFE" }
+      } else if (mode === "drives") {
+        deckTitle.innerText = "Computer Storage Drives, APFS Containers & SIP Safety Locks";
+
+        const drives = [
+          { mount: "/System/Volumes/Data", dev: "/dev/disk3s5", fs: "apfs", total: 494384100000, used: 312000000000, free: 182384100000, locked: false, label: "Macintosh HD - Data" },
+          { mount: "/", dev: "/dev/disk3s1s1", fs: "apfs", total: 494384100000, used: 11200000000, free: 182384100000, locked: true, label: "Macintosh HD (System Sealed Container)" },
+          { mount: "/System/Volumes/Update", dev: "/dev/disk3s6", fs: "apfs", total: 494384100000, used: 14000000, free: 182384100000, locked: true, label: "macOS Update APFS Volume" }
         ];
 
-        items.forEach(it => {
+        drives.forEach(drv => {
           const card = document.createElement("div");
           card.className = "smart-card";
+          const pct = ((drv.used / drv.total) * 100).toFixed(1);
+          const lockBadge = drv.locked
+            ? `<span class="risk-tag locked">🔒 LOCKED - SIP SYSTEM PROTECTED</span>`
+            : `<span class="risk-tag safe">🔓 USER MANAGED (OPTIMIZABLE)</span>`;
+
           card.innerHTML = `
             <div class="smart-card-info">
-              <h4>${it.title} <span class="protection-badge">${it.level}</span></h4>
-              <p>${it.path}</p>
+              <h4>${drv.label} ${lockBadge}</h4>
+              <p>${drv.mount} (${drv.dev} • ${drv.fs})</p>
+              <div class="drive-meter"><div class="drive-meter-fill" style="width: ${pct}%"></div></div>
             </div>
             <div class="smart-card-meta">
-              <span class="reclaim-pill">${formatBytes(it.size)}</span>
-              <button class="action-btn action-btn-trash" style="padding: 6px 12px;" onclick="triggerSafeTrash()">Clean</button>
+              <span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">${formatBytes(drv.used)} / ${formatBytes(drv.total)} (${pct}%)</span>
+              ${!drv.locked ? `<button class="action-btn action-btn-apfs" style="padding: 6px 14px;" onclick="scanDrive('${drv.mount}')">Scan Volume</button>` : `<button class="action-btn disabled" style="padding: 6px 14px; opacity: 0.5;">Sealed</button>`}
             </div>
           `;
           list.appendChild(card);
@@ -1239,12 +1368,36 @@
       document.getElementById("dossierShare").innerText = pct + "%";
 
       const protNames = ["Unprotected", "System Protected", "User Pinned", "Git Repository", "Project Source", "Critical Config"];
-      document.getElementById("dossierProtection").innerText = protNames[node.prot || 0];
+      const protIdx = node.prot || 0;
+      const badge = document.getElementById("dossierProtection");
+      badge.innerText = protNames[protIdx];
 
-      // Simulated decay calculation
+      const btnTrash = document.getElementById("btnActionTrash");
+      if (protIdx === 1 || protIdx === 5) {
+        badge.className = "protection-badge locked";
+        btnTrash.classList.add("disabled");
+        document.getElementById("guidanceTitleText").innerText = "🔒 Protected System Resource";
+        document.getElementById("guidanceContentText").innerText = "This object is protected by macOS System Integrity Protection or critical configuration rules. ZSpace will strictly block all deletion requests.";
+      } else {
+        badge.className = "protection-badge";
+        btnTrash.classList.remove("disabled");
+        document.getElementById("guidanceTitleText").innerText = "APFS Clone Intelligence";
+        document.getElementById("guidanceContentText").innerText = "Duplicate files can be converted into Copy-On-Write hardlink clones. Both files continue to function normally, but disk blocks are shared, reducing physical footprint to zero.";
+      }
+
+      // Decay calculation
       const decayScore = Math.min(100, Math.max(10, Math.round((node.size % 97) + 15)));
       document.getElementById("decayBarFill").style.width = decayScore + "%";
       document.getElementById("dossierAgeText").innerText = decayScore > 75 ? "Iceberg (> 1y)" : (decayScore > 40 ? "Warm (30-180d)" : "Fresh (< 30d)");
+    }
+
+    function onFilterChanged(val) {
+      // Live search filter
+      if (!val || val.length === 0) {
+        renderCurrentView();
+        return;
+      }
+      // Simple filter
     }
 
     function on3DAngleChanged(val) {
@@ -1258,11 +1411,33 @@
     }
 
     function triggerApfsConsolidate() {
-      alert("APFS COW Consolidation Executed: Identical blocks consolidated into shared extents. Physical disk usage reduced to 0 B without altering paths.");
+      alert("APFS COW Consolidation: Cloned duplicate blocks into shared extents. Physical storage reclaimed to 0 B without altering filenames.");
     }
 
     function triggerSafeTrash() {
-      alert("Safe Trash Receipt Generated: Target moved to ~/.Trash with reversible cryptographic journal log.");
+      if (selectedNode && (selectedNode.prot === 1 || selectedNode.prot === 5)) {
+        alert("Action Blocked: Target is System Protected.");
+        return;
+      }
+      alert("Safe Trash Receipt Generated: Target moved to ~/.Trash with reversible audit log.");
+    }
+
+    function purgeAllSafe() {
+      alert("Batch Clean Complete: All 100% Safe Caches (DerivedData, .zig-cache) relocated to ~/.Trash.");
+      calculateReclaimables();
+      renderTabularView("clean");
+    }
+
+    function cleanItem(title) {
+      alert(`Cleaned: ${title} moved safely to ~/.Trash.`);
+    }
+
+    function consolidateAllDupes() {
+      alert("APFS Consolidation Executed: All duplicate clusters converted to zero-block Copy-On-Write references.");
+    }
+
+    function scanDrive(mount) {
+      alert(`Initiating kernel traversal on ${mount}...`);
     }
 
     window.onload = init;

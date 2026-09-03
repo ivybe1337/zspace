@@ -5,6 +5,7 @@ const dedup = @import("../core/dedup.zig");
 const analyzer = @import("../core/analyzer.zig");
 const cleaner = @import("../core/cleaner.zig");
 const apfs = @import("../core/apfs.zig");
+const disks = @import("../core/disks.zig");
 const tui = @import("../tui/tui.zig");
 const gui = @import("../gui/app.zig");
 const repl = @import("../repl/repl.zig");
@@ -65,6 +66,14 @@ pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try runDedupCmd(allocator, real_path);
     } else if (std.mem.eql(u8, command, "analyze")) {
         try runAnalyzeCmd(allocator, real_path);
+    } else if (std.mem.eql(u8, command, "clean")) {
+        try runCleanCmd(allocator, real_path);
+    } else if (std.mem.eql(u8, command, "wins") or std.mem.eql(u8, command, "quick-wins")) {
+        try runWinsCmd(allocator, real_path);
+    } else if (std.mem.eql(u8, command, "npkill") or std.mem.eql(u8, command, "sweep")) {
+        try runNpkillCmd(allocator, real_path);
+    } else if (std.mem.eql(u8, command, "drives") or std.mem.eql(u8, command, "volumes") or std.mem.eql(u8, command, "df")) {
+        try runDrivesCmd(allocator);
     } else if (std.mem.eql(u8, command, "top")) {
         var limit: usize = 20;
         if (args.len >= 4) {
@@ -90,24 +99,28 @@ pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !void {
 fn printHelp() void {
     out.printRaw(
         \\================================================================================
-        \\  ZSPACE  —  Ultra-Fast Pure Zig Disk Management Engine
+        \\  ZSPACE  —  Ultra-Fast Pure Zig Disk & Spacetime Management Suite
         \\================================================================================
         \\
         \\USAGE:
         \\  zspace <command> [path] [options]
         \\
-        \\COMMANDS:
+        \\CLEANUP & ANALYSIS:
+        \\  clean <path>         Analyze and show smart cleanup recommendations & danger risks
+        \\  wins <path>          Show quick-win safe storage reclaimables (>100MB caches)
+        \\  npkill <path>        Sweep for heavy build artifacts (node_modules, target, .venv)
+        \\  dedup <path>         Find duplicate files using 3-stage sparse & streaming hash
+        \\  decay <path>         Analyze temporal file age & dormant iceberg storage
+        \\  drives               Map out entire computer's drives, APFS containers & SIP locks
+        \\
+        \\EXPLORATION & BENCHMARKS:
         \\  repl [path]          Launch full interactive high-throughput disk shell
         \\  scan <path>          Perform ultra-fast multi-threaded scan and print summary
-        \\  dedup <path>         Find duplicate files using 3-stage sparse & streaming hash
-        \\  analyze <path>       Show category breakdown & smart cleanup recommendations
-        \\  decay <path>         Analyze temporal file age & dormant iceberg storage
-        \\  3d <path>            Render 3D isometric topological elevation map
         \\  top <path> [N]       List top N largest files (default: 20)
-        \\  tui <path>           Launch terminal disk visualizer
-        \\  gui <path>           Launch native macOS Cocoa Liquid Glass Visualizer
+        \\  3d <path>            Render 3D isometric topological elevation map
+        \\  tui <path>           Launch interactive ANSI terminal visualizer
+        \\  gui <path>           Launch native macOS Cocoa Studio Liquid Glass GUI
         \\  benchmark <path>     Benchmark scanning IOPS, throughput, and memory footprint
-        \\  help                 Show this help documentation
         \\  version              Display version and engine details
         \\
     );
@@ -153,6 +166,178 @@ fn runScanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
         mb_per_sec,
         files_per_sec,
     });
+}
+
+fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+    var sc = scanner.Scanner.init(allocator, .{});
+    defer sc.deinit();
+
+    const root = try sc.scan(path);
+    var an = analyzer.Analyzer.init(allocator);
+    var items = try an.generateSmartCleanRecommendations(root);
+    defer items.deinit(allocator);
+
+    out.printRaw("\n\x1b[1;38;2;0;229;255m=== SMART CLEANUP RECOMMENDATIONS & RISK ANALYSIS ===\x1b[0m\n\n");
+
+    if (items.items.len == 0) {
+        out.printRaw("✓ System scope is tidy. No bulk caches or build artifacts found.\n");
+        return;
+    }
+
+    var total_reclaimable: u64 = 0;
+
+    for (items.items) |it| {
+        var sz_b: [32]u8 = undefined;
+        const sz_s = types.DiskNode.formatSize(it.size_bytes, &sz_b);
+        total_reclaimable += it.size_bytes;
+
+        out.print("  [{d}] {s}{s}\x1b[0m \x1b[1m{s}\x1b[0m — \x1b[1;38;2;255;110;64m{s}\x1b[0m\n", .{
+            it.id,
+            it.risk.colorAnsi(),
+            it.risk.label(),
+            it.title,
+            sz_s,
+        });
+        out.print("      \x1b[90mPath:\x1b[0m {s}\n", .{it.path});
+        out.print("      \x1b[90mNote:\x1b[0m {s}\n\n", .{it.description});
+    }
+
+    var total_b: [32]u8 = undefined;
+    const total_s = types.DiskNode.formatSize(total_reclaimable, &total_b);
+    out.print("Total Reclaimable Space: \x1b[1;38;2;255;110;64m{s}\x1b[0m across {d} candidates.\n", .{ total_s, items.items.len });
+    out.printRaw("To clean interactively with number selection or safe batch, run: \x1b[1;36mzspace repl\x1b[0m\n\n");
+}
+
+fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+    var sc = scanner.Scanner.init(allocator, .{});
+    defer sc.deinit();
+
+    const root = try sc.scan(path);
+    var an = analyzer.Analyzer.init(allocator);
+    var items = try an.generateSmartCleanRecommendations(root);
+    defer items.deinit(allocator);
+
+    out.printRaw("\n\x1b[1;32m=== INSTANT QUICK-WINS (ZERO-RISK RECLAIMABLES) ===\x1b[0m\n\n");
+
+    var total_wins: u64 = 0;
+    var count: usize = 0;
+
+    for (items.items) |it| {
+        if (it.risk == .Safe_ZeroRisk and it.is_quick_win) {
+            var sz_b: [32]u8 = undefined;
+            const sz_s = types.DiskNode.formatSize(it.size_bytes, &sz_b);
+            total_wins += it.size_bytes;
+            count += 1;
+
+            out.print("  {d}. \x1b[1m{s:<36}\x1b[0m {s:>10}  \x1b[36m{s}\x1b[0m\n", .{
+                count,
+                it.title,
+                sz_s,
+                it.path,
+            });
+        }
+    }
+
+    var win_b: [32]u8 = undefined;
+    const win_s = types.DiskNode.formatSize(total_wins, &win_b);
+    out.print("\nTotal Zero-Risk Instant Wins: \x1b[1;32m{s}\x1b[0m\n", .{win_s});
+    out.printRaw("To purge: run `zspace repl` and type `clean safe`\n\n");
+}
+
+fn runNpkillCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+    var sc = scanner.Scanner.init(allocator, .{});
+    defer sc.deinit();
+
+    const root = try sc.scan(path);
+
+    var list: std.ArrayList(*const types.DiskNode) = .{ .items = &.{}, .capacity = 0 };
+    defer list.deinit(allocator);
+
+    try findHeavyDeps(allocator, root, &list);
+
+    out.printRaw("\n\x1b[1;36m=== HEAVY DEPENDENCY DIRECTORIES (npkill sweep) ===\x1b[0m\n\n");
+
+    if (list.items.len == 0) {
+        out.printRaw("✓ No heavy dependency folders found.\n\n");
+        return;
+    }
+
+    var total_waste: u64 = 0;
+    for (list.items, 0..) |d, idx| {
+        var sz_b: [32]u8 = undefined;
+        const sz_s = types.DiskNode.formatSize(d.size_bytes, &sz_b);
+        total_waste += d.size_bytes;
+
+        out.print("  [{d}] \x1b[1m{s:<20}\x1b[0m {s:>10}  \x1b[36m{s}\x1b[0m\n", .{
+            idx + 1,
+            d.name,
+            sz_s,
+            d.path,
+        });
+    }
+
+    var waste_b: [32]u8 = undefined;
+    const waste_s = types.DiskNode.formatSize(total_waste, &waste_b);
+    out.print("\nTotal Dependencies Footprint: \x1b[1;38;2;255;110;64m{s}\x1b[0m across {d} directories.\n\n", .{ waste_s, list.items.len });
+}
+
+fn findHeavyDeps(allocator: std.mem.Allocator, node: *const types.DiskNode, list: *std.ArrayList(*const types.DiskNode)) anyerror!void {
+    if (node.kind == .directory) {
+        if (std.mem.eql(u8, node.name, "node_modules") or
+            std.mem.eql(u8, node.name, "target") or
+            std.mem.eql(u8, node.name, ".zig-cache") or
+            std.mem.eql(u8, node.name, "DerivedData") or
+            std.mem.eql(u8, node.name, ".venv"))
+        {
+            try list.append(allocator, node);
+            return;
+        }
+        for (node.children.items) |child| {
+            try findHeavyDeps(allocator, child, list);
+        }
+    }
+}
+
+fn runDrivesCmd(allocator: std.mem.Allocator) !void {
+    var dm = disks.DiskMapper.init(allocator);
+    var volumes = try dm.listVolumes();
+    defer {
+        for (volumes.items) |v| {
+            allocator.free(v.mount_point);
+            allocator.free(v.device_name);
+            allocator.free(v.fs_type);
+        }
+        volumes.deinit(allocator);
+    }
+
+    out.printRaw("\n\x1b[1;38;2;0;229;255m=== SYSTEM VOLUMES, APFS CONTAINERS & STORAGE MAP ===\x1b[0m\n\n");
+
+    for (volumes.items) |v| {
+        var tot_b: [32]u8 = undefined;
+        var used_b: [32]u8 = undefined;
+        var free_b: [32]u8 = undefined;
+
+        const tot_s = types.DiskNode.formatSize(v.total_bytes, &tot_b);
+        const used_s = types.DiskNode.formatSize(v.used_bytes, &used_b);
+        const free_s = types.DiskNode.formatSize(v.free_bytes, &free_b);
+
+        const bar_w = 24;
+        const filled = @as(usize, @intFromFloat((v.percent_used / 100.0) * @as(f32, @floatFromInt(bar_w))));
+        var bar_buf: [24]u8 = undefined;
+        for (0..bar_w) |b_i| {
+            bar_buf[b_i] = if (b_i < filled) '#' else '.';
+        }
+
+        out.print("  \x1b[1;37m{s:<32}\x1b[0m [{s}] {d:>5.1}%\n", .{ v.mount_point, bar_buf[0..bar_w], v.percent_used });
+        out.print("    \x1b[90mDevice:\x1b[0m {s} ({s}) | \x1b[90mUsed:\x1b[0m {s} | \x1b[90mFree:\x1b[0m \x1b[1;32m{s}\x1b[0m | \x1b[90mTotal:\x1b[0m {s}\n", .{
+            v.device_name,
+            v.fs_type,
+            used_s,
+            free_s,
+            tot_s,
+        });
+        out.print("    \x1b[90mStatus:\x1b[0m {s}\n\n", .{v.status_label});
+    }
 }
 
 fn runDedupCmd(allocator: std.mem.Allocator, path: []const u8) !void {
@@ -212,7 +397,7 @@ fn runAnalyzeCmd(allocator: std.mem.Allocator, path: []const u8) !void {
 
     var an = analyzer.Analyzer.init(allocator);
     const categories = try an.aggregateCategories(root);
-    var suggestions = try an.generateSmartCleanSuggestions(root);
+    var suggestions = try an.generateSmartCleanRecommendations(root);
     defer suggestions.deinit(allocator);
 
     out.printRaw("\n\x1b[1;36m=== CATEGORY COMPOSITION ===\x1b[0m\n");
@@ -234,7 +419,7 @@ fn runAnalyzeCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     } else {
         for (suggestions.items, 0..) |sug, idx| {
             var sz_buf: [32]u8 = undefined;
-            const sz_str = types.DiskNode.formatSize(sug.reclaimable_bytes, &sz_buf);
+            const sz_str = types.DiskNode.formatSize(sug.size_bytes, &sz_buf);
             out.print("  {d}. {s} ({s}) -> Reclaim {s}\n", .{
                 idx + 1,
                 sug.title,

@@ -203,14 +203,12 @@ pub const TuiApp = struct {
             var sz_buf: [32]u8 = undefined;
             const sz_str = types.DiskNode.formatSize(sug.reclaimable_bytes, &sz_buf);
 
-            const safety_tag = switch (sug.safe_level) {
-                .high_safe => "\x1b[1;32m[100% SAFE]\x1b[0m",
-                .recommended => "\x1b[1;36m[RECOMMENDED]\x1b[0m",
-                .review_needed => "\x1b[1;33m[REVIEW]\x1b[0m",
-            };
+            const safety_tag = sug.risk.label();
+            const color_tag = sug.risk.colorAnsi();
 
-            out.print("  {d}. {s} {s} -> Reclaim \x1b[1;38;2;255;110;64m{s}\x1b[0m\n     \x1b[90m{s}\x1b[0m\n\n", .{
+            out.print("  {d}. {s}{s}\x1b[0m {s} -> Reclaim \x1b[1;38;2;255;110;64m{s}\x1b[0m\n     \x1b[90m{s}\x1b[0m\n\n", .{
                 idx + 1,
+                color_tag,
                 safety_tag,
                 sug.title,
                 sz_str,
