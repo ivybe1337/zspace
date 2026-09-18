@@ -19,12 +19,23 @@ pub const InodeKey = struct {
     ino: u64,
 };
 
+pub const ScanProgress = struct {
+    dirs_visited: u64 = 0,
+    files_seen: u64 = 0,
+    bytes_seen: u64 = 0,
+    errors_seen: u64 = 0,
+    cancelled: bool = false,
+};
+
 pub const Scanner = struct {
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
     config: ScannerConfig,
     telemetry: types.ScanTelemetry = .{},
     errors_atomic: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    dirs_atomic: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    files_atomic: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
+    bytes_atomic: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     is_scanning: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     cancel_requested: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     visited_inodes: std.AutoHashMap(InodeKey, void),
@@ -45,6 +56,39 @@ pub const Scanner = struct {
 
     pub fn cancel(self: *Scanner) void {
         self.cancel_requested.store(true, .release);
+    }
+
+    pub fn progress(self: *const Scanner) ScanProgress {
+        return .{
+            .dirs_visited = self.dirs_atomic.load(.acquire),
+            .files_seen = self.files_atomic.load(.acquire),
+            .bytes_seen = self.bytes_atomic.load(.acquire),
+            .errors_seen = self.errors_atomic.load(.acquire),
+            .cancelled = self.cancel_requested.load(.acquire),
+        };
+    }
+
+    pub const ScanWorker = struct {
+        thread: std.Thread,
+        scanner: *Scanner,
+        root_path: []const u8,
+        result: ?*types.DiskNode = null,
+        scan_err: ?anyerror = null,
+
+        fn entry(self: *ScanWorker) void {
+            self.result = self.scanner.scan(self.root_path) catch |err| {
+                self.scan_err = err;
+                return;
+            };
+        }
+    };
+
+    /// C05: launch scan on a background thread; poll `scanner.progress()`
+    /// at ~10Hz and call `scanner.cancel()` to abort. Join with
+    /// `std.Thread.join(worker.thread)` then check `worker.scan_err`.
+    pub fn scanBackground(self: *Scanner, root_path: []const u8, worker: *ScanWorker) !void {
+        worker.* = .{ .thread = undefined, .scanner = self, .root_path = root_path };
+        worker.thread = try std.Thread.spawn(.{}, ScanWorker.entry, .{worker});
     }
 
     pub fn scan(self: *Scanner, root_path: []const u8) !*types.DiskNode {
@@ -105,6 +149,7 @@ pub const Scanner = struct {
             return;
         }
         defer _ = c.closedir(dir);
+        _ = self.dirs_atomic.fetchAdd(1, .monotonic);
 
         const arena_alloc = self.arena.allocator();
         var children_list: std.ArrayListUnmanaged(*types.DiskNode) = .{ .items = &.{}, .capacity = 0 };
@@ -169,6 +214,9 @@ pub const Scanner = struct {
                         @as(u64, @intCast(st.st_blocks)) * 512
                     else
                         ((child_node.size_bytes + 4095) / 4096) * 4096;
+
+                    _ = self.files_atomic.fetchAdd(1, .monotonic);
+                    _ = self.bytes_atomic.fetchAdd(child_node.size_bytes, .monotonic);
 
                     node.size_bytes += child_node.size_bytes;
                     node.allocated_bytes += child_node.allocated_bytes;
