@@ -17,82 +17,312 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
-pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len < 2 or (args.len == 2 and std.mem.startsWith(u8, args[1], "-psn"))) {
+/// C06 machine CLI contract: unified exit codes.
+/// 0 = ok, 2 = usage error, 3 = scan/io error, 4 = no results (empty set).
+pub const ExitCode: u8 = u8;
+pub const EXIT_OK: u8 = 0;
+pub const EXIT_USAGE: u8 = 2;
+pub const EXIT_SCAN: u8 = 3;
+pub const EXIT_EMPTY: u8 = 4;
+
+pub const OutputFormat = enum { table, json };
+
+pub const GlobalOpts = struct {
+    format: OutputFormat = .table,
+    dry_run: bool = false,
+    verbose: bool = false,
+    min_size: u64 = 0,
+};
+
+fn logVerbose(opts: GlobalOpts, comptime fmt: []const u8, args: anytype) void {
+    if (!opts.verbose) return;
+    // stderr via raw write(2), matching out.zig idiom (no Io instance needed).
+    var buf: [2048]u8 = undefined;
+    const slice = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    _ = c.write(2, slice.ptr, slice.len);
+    _ = c.write(2, "\n".ptr, 1);
+}
+
+/// Parse `--min-size=<n>` / `--min-size <n>` with KB/MB/GB/TB suffixes (case-insensitive).
+/// Bare integers are bytes. Returns error.InvalidMinSize on failure.
+fn parseMinSize(text: []const u8) !u64 {
+    if (text.len == 0) return error.InvalidMinSize;
+    var num_end: usize = 0;
+    while (num_end < text.len and std.ascii.isDigit(text[num_end])) : (num_end += 1) {}
+    if (num_end == 0) return error.InvalidMinSize;
+    const num = std.fmt.parseInt(u64, text[0..num_end], 10) catch return error.InvalidMinSize;
+    const suffix = text[num_end..];
+    if (suffix.len == 0 or std.ascii.eqlIgnoreCase(suffix, "b")) return num;
+    if (std.ascii.eqlIgnoreCase(suffix, "k") or std.ascii.eqlIgnoreCase(suffix, "kb")) return num * 1024;
+    if (std.ascii.eqlIgnoreCase(suffix, "m") or std.ascii.eqlIgnoreCase(suffix, "mb")) return num * 1024 * 1024;
+    if (std.ascii.eqlIgnoreCase(suffix, "g") or std.ascii.eqlIgnoreCase(suffix, "gb")) return num * 1024 * 1024 * 1024;
+    if (std.ascii.eqlIgnoreCase(suffix, "t") or std.ascii.eqlIgnoreCase(suffix, "tb")) return num * 1024 * 1024 * 1024 * 1024;
+    return error.InvalidMinSize;
+}
+
+fn usageError(comptime fmt: []const u8, args: anytype) u8 {
+    out.print("error: " ++ fmt ++ "\n\n", args);
+    printHelp();
+    return EXIT_USAGE;
+}
+
+const ParsedArgs = struct {
+    command: ?[]const u8 = null,
+    positionals: []const []const u8 = &.{},
+    opts: GlobalOpts = .{},
+    help_requested: bool = false,
+    command_help: bool = false,
+};
+
+/// Split argv[1..] into: command (first non-flag), positionals, and global
+/// flags. Flags may appear before OR after the command/path so both
+/// `zspace --format=json scan <path>` and `zspace scan <path> --format=json`
+/// work. `--format=json|table`, `--dry-run`, `--verbose`,
+/// `--min-size=<n>` (also `--min-size <n>`).
+fn parseCliArgs(allocator: std.mem.Allocator, raw: []const []const u8) !ParsedArgs {
+    var opts = GlobalOpts{};
+    var command: ?[]const u8 = null;
+    var positionals: std.ArrayList([]const u8) = .{ .items = &.{}, .capacity = 0 };
+    defer positionals.deinit(allocator);
+    var help_requested = false;
+    var command_help = false;
+
+    var i: usize = 0;
+    while (i < raw.len) : (i += 1) {
+        const arg = raw[i];
+        if (std.mem.eql(u8, arg, "--")) {
+            // Everything after `--` is positional.
+            i += 1;
+            while (i < raw.len) : (i += 1) {
+                if (command == null) {
+                    command = raw[i];
+                } else {
+                    try positionals.append(allocator, raw[i]);
+                }
+            }
+            break;
+        } else if (std.mem.startsWith(u8, arg, "--format=")) {
+            const val = arg["--format=".len..];
+            if (std.mem.eql(u8, val, "json")) {
+                opts.format = .json;
+            } else if (std.mem.eql(u8, val, "table")) {
+                opts.format = .table;
+            } else {
+                return error.InvalidFormat;
+            }
+        } else if (std.mem.eql(u8, arg, "--format")) {
+            i += 1;
+            if (i >= raw.len) return error.MissingFlagValue;
+            const val = raw[i];
+            if (std.mem.eql(u8, val, "json")) {
+                opts.format = .json;
+            } else if (std.mem.eql(u8, val, "table")) {
+                opts.format = .table;
+            } else {
+                return error.InvalidFormat;
+            }
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            opts.dry_run = true;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            opts.verbose = true;
+        } else if (std.mem.startsWith(u8, arg, "--min-size=")) {
+            const val = arg["--min-size=".len..];
+            opts.min_size = parseMinSize(val) catch return error.InvalidMinSize;
+        } else if (std.mem.eql(u8, arg, "--min-size")) {
+            i += 1;
+            if (i >= raw.len) return error.MissingFlagValue;
+            opts.min_size = parseMinSize(raw[i]) catch return error.InvalidMinSize;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            if (command != null) {
+                command_help = true;
+            } else {
+                help_requested = true;
+            }
+        } else if (std.mem.eql(u8, arg, "-psn") or std.mem.startsWith(u8, arg, "-psn_")) {
+            continue; // belt-and-suspenders: main.zig already strips these.
+        } else if (arg.len > 1 and arg[0] == '-' and command == null) {
+            return error.UnknownFlag;
+        } else if (command == null) {
+            command = arg;
+        } else {
+            try positionals.append(allocator, arg);
+        }
+    }
+
+    const owned = try positionals.toOwnedSlice(allocator);
+    return .{ .command = command, .positionals = owned, .opts = opts, .help_requested = help_requested, .command_help = command_help };
+}
+
+fn isHelpArg(s: []const u8) bool {
+    return std.mem.eql(u8, s, "--help") or std.mem.eql(u8, s, "-h") or std.mem.eql(u8, s, "help");
+}
+
+fn isVersionArg(s: []const u8) bool {
+    return std.mem.eql(u8, s, "version") or std.mem.eql(u8, s, "--version") or std.mem.eql(u8, s, "-V");
+}
+
+pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
+    const argv = if (args.len > 0) args[1..] else args[0..0];
+
+    var parsed = parseCliArgs(allocator, argv) catch |err| {
+        return switch (err) {
+            error.InvalidFormat => usageError("invalid --format (expected json|table)", .{}),
+            error.InvalidMinSize => usageError("invalid --min-size (expected e.g. 1KB, 10MB, 1073741824)", .{}),
+            error.MissingFlagValue => usageError("flag is missing its value", .{}),
+            error.UnknownFlag => usageError("unknown flag (see --help)", .{}),
+            else => EXIT_USAGE,
+        };
+    };
+    defer allocator.free(parsed.positionals);
+    const opts = parsed.opts;
+
+    // Bare launch (or Finder -psn-only launch): open GUI off-terminal,
+    // otherwise print help. This is the `open ZSpace.app` contract.
+    if (parsed.command == null) {
+        if (parsed.help_requested) {
+            printHelp();
+            return EXIT_OK;
+        }
         const is_terminal = c.isatty(0) == 1;
         if (!is_terminal) {
             const home_c = c.getenv("HOME");
             const launch_dir = if (home_c != null) std.mem.span(@as([*:0]const u8, @ptrCast(home_c))) else ".";
-            try runGuiCmd(allocator, launch_dir);
-            return;
+            runGuiCmd(allocator, launch_dir, opts) catch return EXIT_SCAN;
+            return EXIT_OK;
         }
         printHelp();
-        return;
+        return EXIT_OK;
     }
 
-    const command = args[1];
-    const target_path = if (args.len >= 3) args[2] else ".";
-
-    if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "--help") or std.mem.eql(u8, command, "-h")) {
+    const command = parsed.command.?;
+    if (isHelpArg(command)) {
         printHelp();
-        return;
+        return EXIT_OK;
     }
+    if (isVersionArg(command)) {
+        printVersion(opts);
+        return EXIT_OK;
+    }
+    // `zspace <path> --help`-style: command slot holds a path; real command unknown.
+    // Fall through to unknown-command handling below which prints per-command help hint.
 
-    if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "--version")) {
-        out.print("ZSpace v2.0.0 (Pure Zig 0.16 Native Edition)\n", .{});
-        return;
+    // Per-command --help (both `zspace scan --help` and `zspace help scan`).
+    if (parsed.command_help) {
+        printCommandHelp(command);
+        return EXIT_OK;
+    }
+    if (std.mem.eql(u8, command, "help")) {
+        if (parsed.positionals.len > 0) {
+            printCommandHelp(parsed.positionals[0]);
+        } else {
+            printHelp();
+        }
+        return EXIT_OK;
     }
 
     if (std.mem.eql(u8, command, "repl")) {
-        var r = try repl.Repl.init(allocator);
+        const init_p: ?[]const u8 = if (parsed.positionals.len >= 1) parsed.positionals[0] else null;
+        // REPL is interactive: flags other than --verbose do not apply.
+        logVerbose(opts, "[zspace] repl path={s}", .{init_p orelse "."});
+        var r = repl.Repl.init(allocator) catch return EXIT_SCAN;
         defer r.deinit();
-        const init_p: ?[]const u8 = if (args.len >= 3) target_path else null;
-        try r.run(init_p);
-        return;
+        r.run(init_p) catch return EXIT_SCAN;
+        return EXIT_OK;
+    }
+
+    // Resolve target path: first positional, default ".".
+    // `top` also accepts an optional trailing limit.
+    var target_path: []const u8 = ".";
+    var top_limit: usize = 20;
+    if (std.mem.eql(u8, command, "top")) {
+        // Accept `zspace top <path> [N]` and `zspace top [N]`.
+        if (parsed.positionals.len >= 1) {
+            if (std.fmt.parseInt(usize, parsed.positionals[0], 10)) |n| {
+                if (parsed.positionals.len >= 2) return usageError("too many arguments for top (expected [path] [N])", .{});
+                top_limit = n;
+            } else |_| {
+                target_path = parsed.positionals[0];
+                if (parsed.positionals.len >= 2) {
+                    top_limit = std.fmt.parseInt(usize, parsed.positionals[1], 10) catch return usageError("invalid limit for top (expected integer)", .{});
+                }
+            }
+        }
+    } else {
+        if (parsed.positionals.len >= 1) target_path = parsed.positionals[0];
+        // Any extra positionals beyond the path are a usage error, except
+        // commands that take file pairs (handled per-command below).
+        const takes_pair = std.mem.eql(u8, command, "snapshot");
+        if (parsed.positionals.len > 1 and !takes_pair) {
+            // `scan <path> --help` leftover already handled; anything else is a typo.
+            var only_help = true;
+            for (parsed.positionals[1..]) |extra| {
+                if (!isHelpArg(extra)) only_help = false;
+            }
+            if (only_help) {
+                printCommandHelp(command);
+                return EXIT_OK;
+            }
+            return usageError("too many arguments for '{s}'", .{command});
+        }
     }
 
     var real_path_buf: [4096]u8 = undefined;
     var target_z: [4096]u8 = undefined;
-    if (target_path.len >= target_z.len - 1) return error.PathTooLong;
+    if (target_path.len >= target_z.len - 1) {
+        out.print("error: path too long: {s}\n", .{target_path});
+        return EXIT_USAGE;
+    }
     @memcpy(target_z[0..target_path.len], target_path);
     target_z[target_path.len] = 0;
 
     const real_res = c.realpath(@as([*:0]const u8, @ptrCast(&target_z)), @as([*c]u8, @ptrCast(&real_path_buf)));
     const real_path = if (real_res != null) std.mem.span(@as([*:0]const u8, @ptrCast(&real_path_buf))) else target_path;
 
+    logVerbose(opts, "[zspace] cmd={s} path={s} format={s} dry_run={} min_size={d}", .{ command, real_path, if (opts.format == .json) "json" else "table", opts.dry_run, opts.min_size });
+
     if (std.mem.eql(u8, command, "scan")) {
-        try runScanCmd(allocator, real_path);
+        runScanCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "dedup")) {
-        try runDedupCmd(allocator, real_path);
+        runDedupCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "analyze")) {
-        try runAnalyzeCmd(allocator, real_path);
+        runAnalyzeCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "clean")) {
-        try runCleanCmd(allocator, real_path);
+        runCleanCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "wins") or std.mem.eql(u8, command, "quick-wins")) {
-        try runWinsCmd(allocator, real_path);
+        runWinsCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "npkill") or std.mem.eql(u8, command, "sweep")) {
-        try runNpkillCmd(allocator, real_path);
+        runNpkillCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "drives") or std.mem.eql(u8, command, "volumes") or std.mem.eql(u8, command, "df")) {
-        try runDrivesCmd(allocator);
+        runDrivesCmd(allocator, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "top")) {
-        var limit: usize = 20;
-        if (args.len >= 4) {
-            limit = std.fmt.parseInt(usize, args[3], 10) catch 20;
-        }
-        try runTopCmd(allocator, real_path, limit);
+        runTopCmd(allocator, real_path, top_limit, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "decay") or std.mem.eql(u8, command, "entropy")) {
-        try runEntropyCmd(allocator, real_path);
+        runEntropyCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "3d") or std.mem.eql(u8, command, "elevation")) {
-        try run3DCmd(allocator, real_path);
+        run3DCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "tui")) {
-        try runTuiCmd(allocator, real_path);
+        runTuiCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "gui")) {
-        try runGuiCmd(allocator, real_path);
+        runGuiCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else if (std.mem.eql(u8, command, "benchmark")) {
-        try runBenchmarkCmd(allocator, real_path);
+        runBenchmarkCmd(allocator, real_path, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else {
         out.print("Unknown command: {s}\n\n", .{command});
         printHelp();
+        return EXIT_USAGE;
     }
 }
 
@@ -123,10 +353,44 @@ fn printHelp() void {
         \\  benchmark <path>     Benchmark scanning IOPS, throughput, and memory footprint
         \\  version              Display version and engine details
         \\
+        \\GLOBAL OPTIONS (may appear before or after the command):
+        \\  --format=json|table  Machine-readable JSON or human table (default: table)
+        \\  --dry-run            Preview only; mutate nothing (clean/dedup report only)
+        \\  --verbose, -v        Verbose diagnostics to stderr
+        \\  --min-size=<n>      Size floor, e.g. 1KB, 10MB, 2GB (dedup/top/analyze)
+        \\
+        \\PER-COMMAND HELP:
+        \\  zspace <command> --help    Show options for one command
+        \\  zspace help <command>      Same as above
+        \\
+        \\EXIT CODES:
+        \\  0  success   2  usage error   3  scan/io error   4  no results
+        \\
     );
 }
 
-fn runScanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn printCommandHelp(command: []const u8) void {
+    if (std.mem.eql(u8, command, "scan")) {
+        out.printRaw("zspace scan: fast scan with throughput telemetry.");
+    } else if (std.mem.eql(u8, command, "dedup")) {
+        out.printRaw("zspace dedup: duplicate analysis, report-only.");
+    } else if (std.mem.eql(u8, command, "version")) {
+        printVersion(.{});
+    } else {
+        out.print("No detailed help.", .{});
+    }
+}
+
+fn printVersion(opts: GlobalOpts) void {
+    if (opts.format == .json) {
+        out.printRaw("{\"name\":\"zspace\",\"version\":\"2.0.0\",\"engine\":\"zig-0.16-native\"}\n");
+    } else {
+        out.printRaw("ZSpace v2.0.0 (Pure Zig 0.16 Native Edition)\n");
+    }
+}
+
+fn runScanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     out.print("\x1b[1;36mScanning target:\x1b[0m {s}\n", .{path});
 
     var sc = scanner.Scanner.init(allocator, .{});
@@ -168,7 +432,8 @@ fn runScanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     });
 }
 
-fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -208,7 +473,8 @@ fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     out.printRaw("To clean interactively with number selection or safe batch, run: \x1b[1;36mzspace repl\x1b[0m\n\n");
 }
 
-fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -244,7 +510,8 @@ fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     out.printRaw("To purge: run `zspace repl` and type `clean safe`\n\n");
 }
 
-fn runNpkillCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runNpkillCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -298,7 +565,8 @@ fn findHeavyDeps(allocator: std.mem.Allocator, node: *const types.DiskNode, list
     }
 }
 
-fn runDrivesCmd(allocator: std.mem.Allocator) !void {
+fn runDrivesCmd(allocator: std.mem.Allocator, opts: GlobalOpts) !void {
+    _ = opts;
     var dm = disks.DiskMapper.init(allocator);
     var volumes = try dm.listVolumes();
     defer {
@@ -340,7 +608,8 @@ fn runDrivesCmd(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn runDedupCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runDedupCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     out.print("\x1b[1;36mScanning & Deduplicating:\x1b[0m {s}\n", .{path});
 
     var sc = scanner.Scanner.init(allocator, .{});
@@ -389,7 +658,8 @@ fn runDedupCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     }
 }
 
-fn runAnalyzeCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runAnalyzeCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -430,7 +700,8 @@ fn runAnalyzeCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     }
 }
 
-fn runEntropyCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runEntropyCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -459,7 +730,8 @@ fn runEntropyCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     });
 }
 
-fn run3DCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn run3DCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -471,7 +743,8 @@ fn run3DCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     visualizer3d.ElevationTerrain.renderAsciiWireframe(vertices.items);
 }
 
-fn runTopCmd(allocator: std.mem.Allocator, path: []const u8, limit: usize) !void {
+fn runTopCmd(allocator: std.mem.Allocator, path: []const u8, limit: usize, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -489,7 +762,8 @@ fn runTopCmd(allocator: std.mem.Allocator, path: []const u8, limit: usize) !void
     }
 }
 
-fn runTuiCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runTuiCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -501,7 +775,8 @@ fn runTuiCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     try app.render();
 }
 
-fn runGuiCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runGuiCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -509,7 +784,8 @@ fn runGuiCmd(allocator: std.mem.Allocator, path: []const u8) !void {
     try gui.runGuiApp(allocator, root);
 }
 
-fn runBenchmarkCmd(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runBenchmarkCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
     out.print("\n\x1b[1;35m[ZSpace Performance Benchmark]\x1b[0m Starting on: {s}\n", .{path});
 
     var sc = scanner.Scanner.init(allocator, .{});

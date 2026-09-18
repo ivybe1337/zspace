@@ -209,9 +209,30 @@ pub const DuplicateItem = struct {
 
 pub const DuplicateCluster = struct {
     hash: u64,
+    hash_blake3: [32]u8 = [_]u8{0} ** 32,
     size_each: u64,
     total_wasted_bytes: u64,
     items: std.ArrayListUnmanaged(DuplicateItem),
+};
+
+pub const TrashMethod = enum(u8) {
+    nsfilemanager,
+    copy_unlink_fallback,
+    rename_same_volume,
+
+    pub fn label(self: TrashMethod) []const u8 {
+        return switch (self) {
+            .nsfilemanager => "nsfilemanager",
+            .copy_unlink_fallback => "copy_unlink_fallback",
+            .rename_same_volume => "rename_same_volume",
+        };
+    }
+
+    pub fn fromLabel(s: []const u8) TrashMethod {
+        if (std.mem.eql(u8, s, "copy_unlink_fallback")) return .copy_unlink_fallback;
+        if (std.mem.eql(u8, s, "rename_same_volume")) return .rename_same_volume;
+        return .nsfilemanager;
+    }
 };
 
 pub const CleanOperation = struct {
@@ -220,4 +241,10 @@ pub const CleanOperation = struct {
     size_bytes: u64,
     timestamp_ns: i128,
     verified_hash: u64,
+    // C04: content identity (Blake3-256 of regular files; zeros for dirs).
+    blake3: [32]u8 = [_]u8{0} ** 32,
+    // C04: stable undo receipt id (16 lowercase hex chars, owned slice).
+    receipt_id: []const u8 = &.{},
+    // C04: how the item reached the Trash (Put-Back fidelity hint).
+    method: TrashMethod = .nsfilemanager,
 };
