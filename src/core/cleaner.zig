@@ -62,6 +62,49 @@ extern "c" fn __error() *c_int;
 fn getErrno() c_int {
     return __error().*;
 }
+
+/// Read an entire file via libc open/read (codebase idiom: fixed null-term
+/// path buffer, O_NONBLOCK open, errno via __error()). `max_bytes` guards
+/// runaway reads (error.StreamTooLong). Caller owns the returned slice.
+/// Used by readJournalTail (this file) and snapshot loadSnapshot (pub, Zig
+/// forbids cross-file use of non-pub decls, hence pub).
+pub fn readWholeFileLibc(allocator: std.mem.Allocator, path: []const u8, max_bytes: usize) ![]u8 {
+    var zb: [4096]u8 = undefined;
+    if (path.len == 0 or path.len >= zb.len - 1) return CleanerError.PathTooLong;
+    @memcpy(zb[0..path.len], path);
+    zb[path.len] = 0;
+    const z: [*:0]const u8 = @ptrCast(&zb);
+    const fd = c.open(z, c.O_RDONLY | c.O_NONBLOCK);
+    if (fd < 0) {
+        return switch (getErrno()) {
+            c.ENOENT => error.FileNotFound,
+            c.EACCES, c.EPERM => error.AccessDenied,
+            c.EISDIR => error.IsDir,
+            c.EMFILE, c.ENFILE => error.ProcessFdQuotaExceeded,
+            else => error.Unexpected,
+        };
+    }
+    defer _ = c.close(fd);
+
+    var buf: std.ArrayList(u8) = .{ .items = &.{}, .capacity = 0 };
+    errdefer buf.deinit(allocator);
+
+    // Read in 256KB chunks; stop at EOF (0). EAGAIN/EINTR are transient.
+    var chunk: [256 * 1024]u8 = undefined;
+    while (true) {
+        if (buf.items.len + chunk.len > max_bytes) return error.StreamTooLong;
+        const n = c.read(fd, &chunk, chunk.len);
+        if (n < 0) {
+            const e = getErrno();
+            if (e == c.EAGAIN or e == c.EINTR) continue;
+            return error.ReadFailed;
+        }
+        if (n == 0) break; // EOF
+        try buf.appendSlice(allocator, chunk[0..@intCast(n)]);
+    }
+    return buf.toOwnedSlice(allocator);
+}
+
 fn haveObjC() bool {
     return objc_getClass("NSFileManager") != null and sel_registerName("defaultManager") != null;
 }
@@ -163,6 +206,11 @@ fn jsonEscapeInto(list: *std.ArrayList(u8), allocator: std.mem.Allocator, raw: [
     }
     try list.append(allocator, '"');
 }
+
+pub const JournalTailEntry = struct {
+    line: []const u8,
+};
+
 
 pub const Cleaner = struct {
     allocator: std.mem.Allocator,
@@ -486,6 +534,52 @@ pub const Cleaner = struct {
             if (std.mem.eql(u8, op.receipt_id, receipt_id)) return op;
         }
         return null;
+    }
+
+    /// Read the last `max_lines` entries of the on-disk JSONL journal
+    /// (oldest→newest order preserved within the returned tail). Returns lines
+    /// verbatim including the trailing JSON; caller frees each `.line` and the
+    /// list with the passed allocator.
+    pub fn readJournalTail(
+        self: *Cleaner,
+        allocator: std.mem.Allocator,
+        max_lines: usize,
+    ) !std.ArrayList(JournalTailEntry) {
+        _ = self;
+        var out_list: std.ArrayList(JournalTailEntry) = .{ .items = &.{}, .capacity = 0 };
+        errdefer {
+            for (out_list.items) |e| allocator.free(e.line);
+            out_list.deinit(allocator);
+        }
+        const jp = try journalFilePath(allocator);
+        defer allocator.free(jp);
+
+        const data = readWholeFileLibc(allocator, jp, 1 << 28) catch |e| switch (e) {
+            error.FileNotFound => return out_list,
+            else => return e,
+        };
+        defer allocator.free(data);
+
+        // Ring-buffer the tail: keep last max_lines non-empty lines.
+        var ring = try allocator.alloc([]const u8, max_lines);
+        defer allocator.free(ring);
+        var ring_len: usize = 0;
+        var head: usize = 0;
+        var it = std.mem.splitScalar(u8, data, '\n');
+        while (it.next()) |line| {
+            if (line.len == 0) continue;
+            if (ring_len < max_lines) {
+                ring[ring_len] = line;
+                ring_len += 1;
+            } else {
+                ring[head] = line;
+                head = (head + 1) % max_lines;
+            }
+        }
+        for (ring[0..ring_len]) |line| {
+            try out_list.append(allocator, .{ .line = try allocator.dupe(u8, line) });
+        }
+        return out_list;
     }
 
     fn persistUndoLine(self: *Cleaner, op: *const types.CleanOperation) !void {

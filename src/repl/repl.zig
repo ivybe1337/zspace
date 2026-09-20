@@ -104,6 +104,12 @@ pub const Repl = struct {
             try self.executeCd(dest);
         } else if (std.mem.eql(u8, cmd, "ls")) {
             try self.executeLs();
+        } else if (std.mem.eql(u8, cmd, "d") or std.mem.eql(u8, cmd, "dashboard")) {
+            try self.executeDashboard();
+        } else if (cmd.len == 2 and cmd[0] == 't' and cmd[1] >= '1' and cmd[1] <= '5') {
+            // t1–t5 tab shortcuts: t1 scan-root ls · t2 clean · t3 wins ·
+            // t4 npkill · t5 dedup (mirrors TUI tab order).
+            try self.executeTabShortcut(cmd[1] - '0');
         } else if (std.mem.eql(u8, cmd, "clean")) {
             const rest = std.mem.trim(u8, iter.rest(), " ");
             try self.executeClean(rest);
@@ -133,6 +139,11 @@ pub const Repl = struct {
         } else if (std.mem.eql(u8, cmd, "trash")) {
             const target = iter.rest();
             try self.executeTrash(target);
+        } else if (std.mem.eql(u8, cmd, "u") or std.mem.eql(u8, cmd, "undo")) {
+            const receipt = std.mem.trim(u8, iter.rest(), " ");
+            try self.executeUndo(receipt);
+        } else if (std.mem.eql(u8, cmd, "U") or std.mem.eql(u8, cmd, "undo-last")) {
+            try self.executeUndoLast();
         } else {
             out.print("Unknown command: '{s}'. Type 'help' for available commands.\n", .{cmd});
         }
@@ -158,9 +169,16 @@ pub const Repl = struct {
             \\  ls                   List subdirectories and files sorted by size
             \\  search <pattern>     Fast recursive filename and path search (like broot/eza)
             \\  top [N]              List top N largest files in current subtree
+            \\  d / dashboard        One-screen overview: scope, cleanable bytes, heavy deps
+            \\  t1..t5               Tab shortcuts: t1 ls · t2 clean · t3 wins · t4 npkill · t5 dedup
+
             \\  cat / categories     Show category distribution
             \\  3d / elevation       Render 3D isometric topological elevation wireframe
             \\  trash <name | path>  Safely relocate file to system Trash with audit log
+            \\  trash N,M            Trash multiple ls-numbered items at once (e.g. `trash 34,12`)
+            \\  u / undo <receipt>   Restore a trashed item by journal receipt id
+            \\  U / undo-last        Undo the most recent trash operation
+
             \\  exit / quit          Exit REPL
             \\
         );
@@ -441,7 +459,7 @@ pub const Repl = struct {
         };
 
         if (query.len == 0) {
-            out.printRaw("Usage: search <pattern>\n");
+            out.printRaw("Usage: search <pattern>  (space-separated tokens = fuzzy AND filter)\n");
             return;
         }
 
@@ -467,10 +485,31 @@ pub const Repl = struct {
         if (results.items.len > limit) {
             out.print("  ... and {d} more matches\n", .{results.items.len - limit});
         }
+        if (results.items.len > 0) {
+            out.printRaw("  \x1b[90mTip: `cd <name>` to enter a match, or `trash N,M` from `ls` numbering.\x1b[0m\n");
+        }
+    }
+
+    /// Fuzzy AND match: every space-separated token in `query` must appear
+    /// (case-insensitive) somewhere in the node name. Query case is folded
+    /// at call time; a single-token query behaves exactly like substring.
+    fn fuzzyNameMatch(self: *Repl, name: []const u8, query: []const u8) bool {
+        _ = self;
+        var name_buf: [512]u8 = undefined;
+        const name_fold = if (name.len <= name_buf.len) std.ascii.lowerString(name_buf[0..name.len], name) else name;
+
+        var q_buf: [256]u8 = undefined;
+        const q_fold = if (query.len <= q_buf.len) std.ascii.lowerString(q_buf[0..query.len], query) else query;
+
+        var tok_it = std.mem.tokenizeAny(u8, q_fold, " \t");
+        while (tok_it.next()) |tok| {
+            if (std.mem.indexOf(u8, name_fold[0..name.len], tok) == null) return false;
+        }
+        return true;
     }
 
     fn searchRecursive(self: *Repl, node: *const types.DiskNode, query: []const u8, list: *std.ArrayList(*const types.DiskNode)) anyerror!void {
-        if (std.mem.indexOf(u8, node.name, query) != null) {
+        if (self.fuzzyNameMatch(node.name, query)) {
             try list.append(self.allocator, node);
         }
         for (node.children.items) |child| {
@@ -662,6 +701,46 @@ pub const Repl = struct {
             return;
         };
 
+        // `trash 34,12` — numeric `ls`-ordered selection (1-based indices as
+        // shown by executeLs; comma list; no ranges here to keep destructive
+        // ops explicit).
+        if (target_name.len > 0 and std.ascii.isDigit(target_name[0])) {
+            var it = std.mem.splitScalar(u8, target_name, ',');
+            var any_ok = false;
+            var freed: u64 = 0;
+            var count: usize = 0;
+            while (it.next()) |tok_raw| {
+                const tok = std.mem.trim(u8, tok_raw, " \t");
+                if (tok.len == 0) continue;
+                const num = std.fmt.parseInt(usize, tok, 10) catch {
+                    out.print("Invalid index: '{s}' (expected e.g. `trash 34` or `trash 34,12`)\n", .{tok});
+                    continue;
+                };
+                if (num < 1 or num > curr.children.items.len) {
+                    out.print("\x1b[1;33mIndex {d} out of range (1–{d}).\x1b[0m\n", .{ num, curr.children.items.len });
+                    continue;
+                }
+                const child = curr.children.items[num - 1];
+                if (child.protection.isProtected() and child.protection != .ProjectSource) {
+                    out.print("\x1b[1;31m[PROHIBITED] '{s}' is protected ({s}) and cannot be trashed.\x1b[0m\n", .{ child.path, child.protection.label() });
+                    continue;
+                }
+                const op = self.cleaner_inst.safeMoveToTrash(child.path, child.size_bytes, child.protection) catch |err| {
+                    out.print("Failed to trash #{d}: {s}\n", .{ num, @errorName(err) });
+                    continue;
+                };
+                count += 1;
+                freed += op.size_bytes;
+                any_ok = true;
+                out.print("✓ #{d} → Trash: {s}\n", .{ num, op.original_path });
+            }
+            if (any_ok and count > 1) {
+                var sz_b: [32]u8 = undefined;
+                out.print("\n\x1b[1;32m✓ {d} items trashed. Freed {s}.\x1b[0m\n", .{ count, types.DiskNode.formatSize(freed, &sz_b) });
+            }
+            return;
+        }
+
         for (curr.children.items) |child| {
             if (std.mem.eql(u8, child.name, target_name) or std.mem.eql(u8, child.path, target_name)) {
                 if (child.protection.isProtected() and child.protection != .ProjectSource) {
@@ -674,5 +753,112 @@ pub const Repl = struct {
             }
         }
         out.print("Item '{s}' not found in current node.\n", .{target_name});
+    }
+
+    /// `d` / `dashboard` — one-screen overview: location, sizes, quick-win
+    /// total, heavy deps count, largest file.
+    fn executeDashboard(self: *Repl) !void {
+        const curr = self.current_node orelse {
+            out.printRaw("No active scan. Run `scan <path>` first.\n");
+            return;
+        };
+
+        var an = analyzer.Analyzer.init(self.allocator);
+        var items = try an.generateSmartCleanRecommendations(curr);
+        defer items.deinit(self.allocator);
+
+        var reclaim: u64 = 0;
+        var n_safe: usize = 0;
+        var n_review: usize = 0;
+        for (items.items) |it| {
+            if (it.risk.isLocked()) continue;
+            reclaim += it.reclaimable_bytes;
+            if (it.risk == .Safe_ZeroRisk) {
+                n_safe += 1;
+            } else {
+                n_review += 1;
+            }
+        }
+
+        var deps: std.ArrayList(*const types.DiskNode) = .{ .items = &.{}, .capacity = 0 };
+        defer deps.deinit(self.allocator);
+        try self.findHeavyDependencyDirs(curr, &deps);
+
+        var tot_b: [32]u8 = undefined;
+        var rec_b: [32]u8 = undefined;
+        out.printRaw("\n\x1b[1;38;2;0;229;255m╔══════════════════════════ DASHBOARD ═══════════════════════════════════╗\x1b[0m\n");
+        out.print("  Scope    : \x1b[1m{s}\x1b[0m\n", .{curr.path});
+        out.print("  Total    : \x1b[1;38;2;255;110;64m{s}\x1b[0m  ({d} files · {d} dirs)\n", .{
+            types.DiskNode.formatSize(curr.size_bytes, &tot_b),
+            curr.file_count,
+            curr.dir_count,
+        });
+        out.print("  Cleanable: \x1b[1;32m{s}\x1b[0m  ({d} safe · {d} review-needed · {d} heavy-dep dirs)\n", .{
+            types.DiskNode.formatSize(reclaim, &rec_b),
+            n_safe,
+            n_review,
+            deps.items.len,
+        });
+        out.printRaw("  Actions  : \x1b[1;36mclean safe\x1b[0m · \x1b[1;36mclean 1,2\x1b[0m · \x1b[1;36mnpkill\x1b[0m · \x1b[1;36mdedup\x1b[0m · \x1b[1;36m3d\x1b[0m\n");
+        out.printRaw("\x1b[1;38;2;0;229;255m╚═════════════════════════════════════════════════════════════════════════╝\x1b[0m\n");
+    }
+
+    /// t1–t5 shortcuts mirroring the TUI tab order.
+    fn executeTabShortcut(self: *Repl, tab: u8) !void {
+        switch (tab) {
+            1 => try self.executeLs(),
+            2 => try self.executeClean(""),
+            3 => try self.executeQuickWins(),
+            4 => try self.executeNpkill(),
+            5 => try self.executeDedup(),
+            else => unreachable,
+        }
+    }
+
+    /// `u <receipt>` — restore by journal receipt id.
+    fn executeUndo(self: *Repl, receipt: []const u8) !void {
+        if (receipt.len == 0) {
+            out.printRaw("Usage: u <receipt-id>   (ids appear in `history`; `U` undoes the last op)\n");
+            return;
+        }
+        const op = self.cleaner_inst.undoByReceipt(receipt) catch |err| {
+            out.print("\x1b[1;31mUndo failed:\x1b[0m {s} ({s})\n", .{ receipt, @errorName(err) });
+            return;
+        };
+        out.print("\x1b[1;32m✓ Restored:\x1b[0m {s}\n", .{op.original_path});
+    }
+
+    /// `U` — undo the most recent trash op by reading the journal tail.
+    fn executeUndoLast(self: *Repl) !void {
+        var tail = self.cleaner_inst.readJournalTail(self.allocator, 20) catch {
+            out.printRaw("\x1b[1;31mNo journal readable — nothing to undo.\x1b[0m\n");
+            return;
+        };
+        defer {
+            for (tail.items) |e| self.allocator.free(e.line);
+            tail.deinit(self.allocator);
+        }
+
+        // Newest-first: find the last `op":"trash"` line with a receipt.
+        var i = tail.items.len;
+        while (i > 0) {
+            i -= 1;
+            const line = tail.items[i].line;
+            if (std.mem.indexOf(u8, line, "\"op\":\"trash\"") == null) continue;
+            const key = "\"receipt\":\"";
+            const rpos = std.mem.indexOf(u8, line, key) orelse continue;
+            const rest = line[rpos + key.len ..];
+            const rend = std.mem.indexOfScalar(u8, rest, '"') orelse continue;
+            const receipt = rest[0..rend];
+            if (receipt.len == 0) continue;
+
+            const op = self.cleaner_inst.undoByReceipt(receipt) catch |err| {
+                out.print("\x1b[1;31mUndo of {s} failed:\x1b[0m {s}\n", .{ receipt, @errorName(err) });
+                return;
+            };
+            out.print("\x1b[1;32m✓ Undone (receipt {s}):\x1b[0m {s}\n", .{ receipt, op.original_path });
+            return;
+        }
+        out.printRaw("No trash operations in recent history to undo.\n");
     }
 };

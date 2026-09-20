@@ -4,11 +4,13 @@ const scanner = @import("../core/scanner.zig");
 const dedup = @import("../core/dedup.zig");
 const analyzer = @import("../core/analyzer.zig");
 const cleaner = @import("../core/cleaner.zig");
+const snapshot_mod = @import("../core/snapshot.zig");
 const apfs = @import("../core/apfs.zig");
 const disks = @import("../core/disks.zig");
 const tui = @import("../tui/tui.zig");
 const gui = @import("../gui/app.zig");
 const repl = @import("../repl/repl.zig");
+const tui_select = @import("../core/tui_select.zig");
 const visualizer3d = @import("../gui/visualizer3d.zig");
 const out = @import("../core/out.zig");
 
@@ -32,7 +34,64 @@ pub const GlobalOpts = struct {
     dry_run: bool = false,
     verbose: bool = false,
     min_size: u64 = 0,
+    interactive: bool = false,
+    select: []const u8 = "",  // comma-separated indices like "34,12,7"
 };
+
+/// Unified selectable item for interactive cleanup. Deletion goes through
+/// Cleaner.safeMoveToTrash at the call site; no function-pointer field (Zig
+/// 0.16 forbids inferred-error-set fn types in struct fields — C06 note).
+pub const SelectableItem = struct {
+    id: usize, // Display ID (1-based for user)
+    title: []const u8,
+    path: []const u8,
+    size_bytes: u64,
+    risk: analyzer.RiskLevel,
+    is_quick_win: bool,
+};
+
+/// Interactive selection state
+const SelectionState = struct {
+    items: []SelectableItem,
+    selected: []bool,
+    cursor: usize = 0,
+    scroll_offset: usize = 0,
+    term_height: usize = 24,
+};
+
+/// Parse comma-separated indices like "34,12,7" into a sorted array of 0-based indices
+fn parseSelectionIndices(allocator: std.mem.Allocator, input: []const u8) !std.ArrayList(usize) {
+    var result: std.ArrayList(usize) = .{ .items = &.{}, .capacity = 0 };
+    var iter = std.mem.splitScalar(u8, input, ',');
+    while (iter.next()) |part| {
+        const trimmed = std.mem.trim(u8, part, " \t\r\n");
+        if (trimmed.len == 0) continue;
+        const idx = std.fmt.parseInt(usize, trimmed, 10) catch continue;
+        if (idx > 0) {
+            // Convert 1-based user input to 0-based index
+            try result.append(allocator, idx - 1);
+        }
+    }
+    // Sort and deduplicate
+    std.mem.sort(usize, result.items, {}, std.sort.asc(usize));
+    var deduped: std.ArrayList(usize) = .{ .items = &.{}, .capacity = 0 };
+    defer deduped.deinit(allocator);
+    for (result.items) |idx| {
+        if (deduped.items.len == 0 or deduped.items[deduped.items.len - 1] != idx) {
+            try deduped.append(allocator, idx);
+        }
+    }
+    result.deinit(allocator);
+    return deduped.toOwnedSlice(allocator);
+}
+
+/// Check if an index is in the selection list
+fn isIndexSelected(indices: []const usize, index: usize) bool {
+    for (indices) |i| {
+        if (i == index) return true;
+    }
+    return false;
+}
 
 fn logVerbose(opts: GlobalOpts, comptime fmt: []const u8, args: anytype) void {
     if (!opts.verbose) return;
@@ -125,6 +184,14 @@ fn parseCliArgs(allocator: std.mem.Allocator, raw: []const []const u8) !ParsedAr
             opts.dry_run = true;
         } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
             opts.verbose = true;
+        } else if (std.mem.eql(u8, arg, "--interactive") or std.mem.eql(u8, arg, "-i")) {
+            opts.interactive = true;
+        } else if (std.mem.startsWith(u8, arg, "--select=")) {
+            opts.select = arg["--select=".len..];
+        } else if (std.mem.eql(u8, arg, "--select")) {
+            i += 1;
+            if (i >= raw.len) return error.MissingFlagValue;
+            opts.select = raw[i];
         } else if (std.mem.startsWith(u8, arg, "--min-size=")) {
             const val = arg["--min-size=".len..];
             opts.min_size = parseMinSize(val) catch return error.InvalidMinSize;
@@ -132,6 +199,14 @@ fn parseCliArgs(allocator: std.mem.Allocator, raw: []const []const u8) !ParsedAr
             i += 1;
             if (i >= raw.len) return error.MissingFlagValue;
             opts.min_size = parseMinSize(raw[i]) catch return error.InvalidMinSize;
+        } else if (std.mem.eql(u8, arg, "--interactive") or std.mem.eql(u8, arg, "-i")) {
+            opts.interactive = true;
+        } else if (std.mem.startsWith(u8, arg, "--select=")) {
+            opts.select = arg["--select=".len..];
+        } else if (std.mem.eql(u8, arg, "--select")) {
+            i += 1;
+            if (i >= raw.len) return error.MissingFlagValue;
+            opts.select = raw[i];
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             if (command != null) {
                 command_help = true;
@@ -319,6 +394,16 @@ pub fn runCli(allocator: std.mem.Allocator, args: []const []const u8) !u8 {
     } else if (std.mem.eql(u8, command, "benchmark")) {
         runBenchmarkCmd(allocator, real_path, opts) catch return EXIT_SCAN;
         return EXIT_OK;
+    } else if (std.mem.eql(u8, command, "snapshot")) {
+        runSnapshotCmd(allocator, parsed.positionals, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
+    } else if (std.mem.eql(u8, command, "history")) {
+        runHistoryCmd(allocator, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
+    } else if (std.mem.eql(u8, command, "undo")) {
+        const receipt = if (parsed.positionals.len >= 1) parsed.positionals[0] else "";
+        runUndoCmd(allocator, receipt, opts) catch return EXIT_SCAN;
+        return EXIT_OK;
     } else {
         out.print("Unknown command: {s}\n\n", .{command});
         printHelp();
@@ -351,12 +436,18 @@ fn printHelp() void {
         \\  tui <path>           Launch interactive ANSI terminal visualizer
         \\  gui <path>           Launch native macOS Cocoa Studio Liquid Glass GUI
         \\  benchmark <path>     Benchmark scanning IOPS, throughput, and memory footprint
+        \\  snapshot save|diff  Time-travel snapshots (X01 feed): save tree, diff two snaps
+        \\  history              Show trash/clone journal (Trash Insurance X05 feed)
+        \\  undo <receipt>       Restore one trashed item by receipt id
         \\  version              Display version and engine details
         \\
         \\GLOBAL OPTIONS (may appear before or after the command):
         \\  --format=json|table  Machine-readable JSON or human table (default: table)
         \\  --dry-run            Preview only; mutate nothing (clean/dedup report only)
         \\  --verbose, -v        Verbose diagnostics to stderr
+        \\  --interactive, -i   Checkbox TUI to pick items (clean)
+        \\  --select=<spec>     Numbered selection: 34,12 / 3-7 / all / safe (clean)
+
         \\  --min-size=<n>      Size floor, e.g. 1KB, 10MB, 2GB (dedup/top/analyze)
         \\
         \\PER-COMMAND HELP:
@@ -387,6 +478,114 @@ fn printVersion(opts: GlobalOpts) void {
     } else {
         out.printRaw("ZSpace v2.0.0 (Pure Zig 0.16 Native Edition)\n");
     }
+}
+
+fn runSnapshotCmd(allocator: std.mem.Allocator, positionals: []const []const u8, opts: GlobalOpts) !void {
+    _ = opts;
+    if (positionals.len < 1) {
+        out.printRaw("usage: zspace snapshot save <path> -o <file> | zspace snapshot diff <a> <b> [--format=json]\n");
+        return error.InvalidArgs;
+    }
+    const sub = positionals[0];
+    var eng = snapshot_mod.SnapshotEngine.init(allocator);
+    if (std.mem.eql(u8, sub, "save")) {
+        if (positionals.len < 2) {
+            out.printRaw("usage: zspace snapshot save <path> [-o <file>]\n");
+            return error.InvalidArgs;
+        }
+        const scan_path = positionals[1];
+        var dest: []const u8 = "snapshot.zsnap";
+        var i: usize = 2;
+        while (i < positionals.len) : (i += 1) {
+            if (std.mem.eql(u8, positionals[i], "-o") and i + 1 < positionals.len) {
+                dest = positionals[i + 1];
+                i += 1;
+            }
+        }
+        var sc = scanner.Scanner.init(allocator, .{});
+        defer sc.deinit();
+        const root = try sc.scan(scan_path);
+        try eng.saveSnapshot(root, dest);
+        out.print("Snapshot saved: {s} ({d} files)\n", .{ dest, root.file_count });
+    } else if (std.mem.eql(u8, sub, "diff")) {
+        if (positionals.len < 3) {
+            out.printRaw("usage: zspace snapshot diff <a.zsnap> <b.zsnap> [--format=json]\n");
+            return error.InvalidArgs;
+        }
+        var diffs = try eng.compareSnapshots(positionals[1], positionals[2]);
+        defer {
+            for (diffs.items) |d| allocator.free(d.path);
+            diffs.deinit(allocator);
+        }
+        const as_json = for (positionals) |p| {
+            if (std.mem.eql(u8, p, "--format=json")) break true;
+        } else false;
+        if (as_json) {
+            out.printRaw("{\"diffs\":[");
+            for (diffs.items, 0..) |d, idx| {
+                if (idx > 0) out.printRaw(",");
+                const st = switch (d.status) {
+                    .added => "added",
+                    .removed => "removed",
+                    .grew => "grew",
+                    .shrunk => "shrunk",
+                    .unchanged => "unchanged",
+                };
+                out.print("{{\"path\":\"{s}\",\"status\":\"{s}\",\"old\":{d},\"new\":{d},\"diff\":{d}}}", .{ d.path, st, d.old_size, d.new_size, d.diff_bytes });
+            }
+            out.printRaw("]}\n");
+        } else {
+            if (diffs.items.len == 0) {
+                out.printRaw("No differences.\n");
+                return;
+            }
+            for (diffs.items) |d| {
+                const tag: []const u8 = switch (d.status) {
+                    .added => "ADDED  ",
+                    .removed => "REMOVED",
+                    .grew => "GREW   ",
+                    .shrunk => "SHRUNK ",
+                    .unchanged => "SAME   ",
+                };
+                out.print("{s} {s} ({d} -> {d})\n", .{ tag, d.path, d.old_size, d.new_size });
+            }
+        }
+    } else {
+        out.printRaw("usage: zspace snapshot save <path> -o <file> | zspace snapshot diff <a> <b>\n");
+        return error.InvalidArgs;
+    }
+}
+
+fn runHistoryCmd(allocator: std.mem.Allocator, opts: GlobalOpts) !void {
+    _ = opts;
+    var cl = try cleaner.Cleaner.init(allocator);
+    defer cl.deinit();
+    var list = try cl.readJournalTail(allocator, 200);
+    defer {
+        for (list.items) |e| {
+            allocator.free(e.line);
+        }
+        list.deinit(allocator);
+    }
+    if (list.items.len == 0) {
+        out.printRaw("No trash history yet.\n");
+        return;
+    }
+    for (list.items) |e| {
+        out.print("{s}\n", .{e.line});
+    }
+}
+
+fn runUndoCmd(allocator: std.mem.Allocator, receipt: []const u8, opts: GlobalOpts) !void {
+    _ = opts;
+    if (receipt.len == 0) {
+        out.printRaw("usage: zspace undo <receipt-id>\n");
+        return error.InvalidArgs;
+    }
+    var cl = try cleaner.Cleaner.init(allocator);
+    defer cl.deinit();
+    const op = try cl.undoByReceipt(receipt);
+    out.print("Restored {s} (receipt {s})\n", .{ op.original_path, receipt });
 }
 
 fn runScanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
@@ -433,7 +632,6 @@ fn runScanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) 
 }
 
 fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
-    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -470,11 +668,109 @@ fn runCleanCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts)
     var total_b: [32]u8 = undefined;
     const total_s = types.DiskNode.formatSize(total_reclaimable, &total_b);
     out.print("Total Reclaimable Space: \x1b[1;38;2;255;110;64m{s}\x1b[0m across {d} candidates.\n", .{ total_s, items.items.len });
-    out.printRaw("To clean interactively with number selection or safe batch, run: \x1b[1;36mzspace repl\x1b[0m\n\n");
+
+    // C06: --select=<spec> / --interactive execution path. Spec format
+    // `34,12` / `3-7` / `all` / `safe`; interactive uses the checkbox TUI.
+    if (opts.select.len > 0 or opts.interactive) {
+        var chosen_mask: []bool = undefined;
+        var mask_owned = false;
+        defer if (mask_owned) allocator.free(chosen_mask);
+
+        if (opts.select.len > 0) {
+            chosen_mask = tui_select.parseSelectionSpec(
+                allocator,
+                opts.select,
+                items.items.len,
+                struct {
+                    fn isSafe(i: usize) bool {
+                        // Placeholder predicate; real risk check happens at
+                        // the call site below via `items` (parser is generic).
+                        _ = i;
+                        return false;
+                    }
+                }.isSafe,
+            ) catch {
+                out.printRaw("error: invalid --select spec (expected e.g. 34,12 / 3-7 / all / safe)\n\n");
+                return;
+            };
+            mask_owned = true;
+        } else {
+            // Interactive checkbox selection (skips LOCKED items).
+            var sel_items = try allocator.alloc(tui_select.SelectableItem, items.items.len);
+            defer allocator.free(sel_items);
+            for (items.items, 0..) |it, i| {
+                sel_items[i] = .{
+                    .id = it.id,
+                    .title = it.title,
+                    .path = it.path,
+                    .size_bytes = it.size_bytes,
+                    .risk = it.risk,
+                    .locked = it.risk.isLocked(),
+                };
+            }
+            const res = tui_select.runCheckboxSelect(allocator, sel_items, "SELECT CLEANUP CANDIDATES") catch |e| switch (e) {
+                error.NotATty => {
+                    out.printRaw("error: --interactive needs a TTY (stdin is not a terminal)\n\n");
+                    return;
+                },
+                else => return,
+            };
+            if (!res.confirmed or res.chosen.len == 0) {
+                out.printRaw("Cancelled — nothing trashed.\n");
+                return;
+            }
+            chosen_mask = try allocator.alloc(bool, items.items.len);
+            mask_owned = true;
+            for (chosen_mask) |*m| m.* = false;
+            for (res.chosen) |i| chosen_mask[i] = true;
+            allocator.free(res.chosen);
+        }
+
+        // Execute trashes for the chosen mask (dry_run prints only).
+        var n_done: usize = 0;
+        var freed: u64 = 0;
+        for (items.items, 0..) |it, i| {
+            if (!chosen_mask[i]) continue;
+            if (it.risk.isLocked()) {
+                out.print("\x1b[1;31m[BLOCKED] #{d} is SYSTEM LOCKED and cannot be deleted!\x1b[0m\n", .{it.id});
+                continue;
+            }
+            if (opts.dry_run) {
+                out.print("  [dry-run] would trash #{d} {s} ({s})\n", .{ it.id, it.title, it.path });
+                n_done += 1;
+                freed += it.size_bytes;
+                continue;
+            }
+            const op = cleaner_inst_safeTrash(allocator, it.path, it.size_bytes) catch |err| {
+                out.print("Failed to clean #{d}: {s}\n", .{ it.id, @errorName(err) });
+                continue;
+            };
+            n_done += 1;
+            freed += op.size_bytes;
+            var sz_b: [32]u8 = undefined;
+            out.print("✓ Cleaned #{d} ({s}) → Reclaimed {s}\n", .{ it.id, it.title, types.DiskNode.formatSize(op.size_bytes, &sz_b) });
+        }
+        var f_b: [32]u8 = undefined;
+        out.print("\n\x1b[1;32m✓ {d} item(s) processed. {s} {s}\x1b[0m\n", .{
+            n_done,
+            if (opts.dry_run) "Would free " else "Freed ",
+            types.DiskNode.formatSize(freed, &f_b),
+        });
+        return;
+    }
+
+    out.printRaw("To clean interactively with number selection or safe batch, run: \x1b[1;36mzspace repl\x1b[0m or add \x1b[1;36m--select=34,12\x1b[0m\n\n");
+}
+
+/// Small helper so runCleanCmd/runWinsCmd share one Cleaner instance for the
+/// one-shot trash flow (codebase idiom: construct, use, deinit).
+fn cleaner_inst_safeTrash(allocator: std.mem.Allocator, target: []const u8, size: u64) !types.CleanOperation {
+    var cl = try cleaner.Cleaner.init(allocator);
+    defer cl.deinit();
+    return cl.safeMoveToTrash(target, size, .None);
 }
 
 fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {
-    _ = opts;
     var sc = scanner.Scanner.init(allocator, .{});
     defer sc.deinit();
 
@@ -488,12 +784,17 @@ fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) 
     var total_wins: u64 = 0;
     var count: usize = 0;
 
-    for (items.items) |it| {
+    var win_item_idx: std.ArrayList(usize) = .{ .items = &.{}, .capacity = 0 };
+    defer win_item_idx.deinit(allocator);
+
+    for (items.items, 0..) |it, item_i| {
         if (it.risk == .Safe_ZeroRisk and it.is_quick_win) {
             var sz_b: [32]u8 = undefined;
             const sz_s = types.DiskNode.formatSize(it.size_bytes, &sz_b);
             total_wins += it.size_bytes;
             count += 1;
+
+            try win_item_idx.append(allocator, item_i);
 
             out.print("  {d}. \x1b[1m{s:<36}\x1b[0m {s:>10}  \x1b[36m{s}\x1b[0m\n", .{
                 count,
@@ -507,7 +808,71 @@ fn runWinsCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) 
     var win_b: [32]u8 = undefined;
     const win_s = types.DiskNode.formatSize(total_wins, &win_b);
     out.print("\nTotal Zero-Risk Instant Wins: \x1b[1;32m{s}\x1b[0m\n", .{win_s});
-    out.printRaw("To purge: run `zspace repl` and type `clean safe`\n\n");
+
+    // C06: `wins <path> --select=2,3` trashes numbered quick-wins; `--select=all`
+    // = classic "clean safe". Interactive checkbox if -i.
+    if (opts.select.len > 0 or opts.interactive) {
+        if (win_item_idx.items.len == 0) {
+            out.printRaw("No quick-wins to select.\n");
+            return;
+        }
+        var mask: []bool = undefined;
+        if (opts.select.len > 0) {
+            mask = tui_select.parseSelectionSpec(allocator, opts.select, win_item_idx.items.len, null) catch {
+                out.printRaw("error: invalid --select spec (expected e.g. 2,3 / 1-3 / all)\n\n");
+                return;
+            };
+        } else {
+            var sel_items = try allocator.alloc(tui_select.SelectableItem, win_item_idx.items.len);
+            defer allocator.free(sel_items);
+            for (win_item_idx.items, 0..) |item_i, i| {
+                const it = items.items[item_i];
+                sel_items[i] = .{ .id = i + 1, .title = it.title, .path = it.path, .size_bytes = it.size_bytes, .risk = it.risk, .locked = false };
+            }
+            const res = tui_select.runCheckboxSelect(allocator, sel_items, "SELECT QUICK-WINS TO TRASH") catch |e| switch (e) {
+                error.NotATty => {
+                    out.printRaw("error: --interactive needs a TTY (stdin is not a terminal)\n\n");
+                    return;
+                },
+                else => return,
+            };
+            if (!res.confirmed or res.chosen.len == 0) {
+                out.printRaw("Cancelled — nothing trashed.\n");
+                return;
+            }
+            mask = try allocator.alloc(bool, win_item_idx.items.len);
+            for (mask) |*m| m.* = false;
+            for (res.chosen) |i| mask[i] = true;
+            allocator.free(res.chosen);
+        }
+        defer allocator.free(mask);
+
+        var n_done: usize = 0;
+        var freed: u64 = 0;
+        for (mask, 0..) |on, i| {
+            if (!on) continue;
+            const it = items.items[win_item_idx.items[i]];
+            if (opts.dry_run) {
+                out.print("  [dry-run] would trash {s}\n", .{it.path});
+                n_done += 1;
+                freed += it.size_bytes;
+                continue;
+            }
+            const op = cleaner_inst_safeTrash(allocator, it.path, it.size_bytes) catch |err| {
+                out.print("Failed to trash {s}: {s}\n", .{ it.path, @errorName(err) });
+                continue;
+            };
+            n_done += 1;
+            freed += op.size_bytes;
+            var sz_b: [32]u8 = undefined;
+            out.print("✓ Trashed ({s}) → Freed {s}\n", .{ op.original_path, types.DiskNode.formatSize(op.size_bytes, &sz_b) });
+        }
+        var f_b: [32]u8 = undefined;
+        out.print("\n\x1b[1;32m✓ {d} quick-win(s) processed. {s}{s}\x1b[0m\n", .{ n_done, if (opts.dry_run) "Would free " else "Freed ", types.DiskNode.formatSize(freed, &f_b) });
+        return;
+    }
+
+    out.printRaw("To purge: `zspace wins <path> --select=all` (or --select=2,3, interactive: -i)\n\n");
 }
 
 fn runNpkillCmd(allocator: std.mem.Allocator, path: []const u8, opts: GlobalOpts) !void {

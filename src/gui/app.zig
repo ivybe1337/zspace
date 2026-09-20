@@ -81,9 +81,14 @@ fn sendNoArgRet(target: ObjCId, sel: ObjCSel) ObjCId {
     return @as(F, @ptrCast(&objc_msgSend))(target, sel);
 }
 
-fn sendStringWithUTF8(cls: ObjCClass, sel: ObjCSel, cstr: [*:0]const u8) ObjCId {
-    const F = *const fn (ObjCClass, ObjCSel, [*:0]const u8) callconv(.c) ObjCId;
-    return @as(F, @ptrCast(&objc_msgSend))(cls, sel, cstr);
+fn sendStringWithUTF8(cls: ObjCClass, sel: ObjCSel, cstr: []const u8) ObjCId {
+    // Ensure null-termination for ObjC
+    var buf: [4096]u8 = undefined;
+    if (cstr.len >= buf.len) return null;
+    @memcpy(buf[0..cstr.len], cstr);
+    buf[cstr.len] = 0;
+    const F = *const fn (ObjCClass, ObjCSel, [*c]const u8) callconv(.c) ObjCId;
+    return @as(F, @ptrCast(&objc_msgSend))(cls, sel, &buf[0]);
 }
 
 fn sendColor(cls: ObjCClass, sel: ObjCSel, r: f64, g: f64, b: f64, a: f64) ObjCId {
@@ -196,7 +201,7 @@ pub fn runGuiApp(allocator: std.mem.Allocator, root_node: *types.DiskNode) !void
         if (webview != null) {
             sendSetObject(window, sel_setContentView, webview);
 
-            const html_nsstring = sendStringWithUTF8(NSString, sel_stringWithUTF8String, full_html.items.ptr);
+            const html_nsstring = sendStringWithUTF8(NSString, sel_stringWithUTF8String, full_html.items[0..]);
             sendLoadHTML(webview, sel_loadHTMLString, html_nsstring, null);
         }
 
